@@ -13,13 +13,23 @@ import {
   BookOpen,
   HelpCircle,
   LogOut,
+  Layers,
+  ShieldCheck,
 } from "lucide-react"
 import { useState } from "react"
 import { ConfirmModal } from "./ui/confirm-modal"
 
 const navItems = [
+  // ---- MAIN ----
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+
+  // ---- CORE PROXY TOOLS (PAID VALUE) ----
   { href: "/dashboard/proxy", label: "Proxy Gateway", icon: Globe },
+  { href: "/dashboard/proxy/batch", label: "Batch Requests", icon: Layers },
+  { href: "/dashboard/proxy/sticky", label: "Sticky Sessions", icon: ShieldCheck },
+  { href: "/dashboard/ip-check", label: "IP Check", icon: Globe },
+
+  // ---- ACCOUNT / SIDE ----
   { href: "/dashboard/api-keys", label: "API Keys", icon: Key },
   { href: "/dashboard/usage", label: "Usage", icon: BarChart3 },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
@@ -77,6 +87,7 @@ export function DashboardSidebar() {
           Log out
         </Button>
       </div>
+
       <ConfirmModal
         open={showLogoutModal}
         title="Confirm Logout"
