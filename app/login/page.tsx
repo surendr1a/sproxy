@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Globe, Loader2 } from "lucide-react"
+import Image from "next/image"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -61,6 +62,33 @@ export default function LoginPage() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full flex items-center justify-center gap-3"
+              onClick={() => {
+                window.location.href = "/api/auth/google"
+              }}
+            >
+              <Image
+                src="/google.svg"
+                alt="Google"
+                width={18}
+                height={18}
+              />
+              Continue with Google
+            </Button>
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with
+                </span>
+              </div>
+            </div>
             {error && (
               <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-foreground">
                 {error}
