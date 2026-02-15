@@ -7,6 +7,7 @@ import { Session } from "@/lib/models/Session"
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get("code")
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL!
 
   if (!code) return NextResponse.redirect("/login")
 
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
 
   if (!googleUser.email) {
     console.error("Google user:", googleUser)
-    return NextResponse.redirect("/login?error=no_email")
+    return NextResponse.redirect(new URL("/login?error=no_email", baseUrl))
   }
 
   await connectDB()
