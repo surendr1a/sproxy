@@ -7,6 +7,23 @@ type HeaderItem = {
   value: string;
 };
 
+type ApiResponse = {
+  success: boolean;
+  status?: number;
+  body?: any;
+  proxy?: {
+    ip: string;
+    country: string;
+    mode: string;
+    latencyMs: number;
+  };
+  usage?: {
+    consumed: number;
+    remaining: number;
+  };
+  message?: string;
+};
+
 export default function ProxyDashboardPage() {
   const [url, setUrl] = useState("");
   const [method, setMethod] = useState("GET");
@@ -15,229 +32,211 @@ export default function ProxyDashboardPage() {
   ]);
   const [body, setBody] = useState("");
   const [country, setCountry] = useState("Random");
-  const [rotationMode, setRotationMode] = useState<"rotate" | "sticky">(
-    "rotate"
-  );
+  const [rotationMode, setRotationMode] =
+    useState<"rotate" | "sticky">("rotate");
   const [ttl, setTtl] = useState(600);
 
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"response" | "proxy" | "usage">(
-    "response"
-  );
+  const [activeTab, setActiveTab] =
+    useState<"response" | "proxy" | "usage">("response");
 
-  // 🔹 Mock response (static for now)
-  const mockResponse = `{
-  "ip": "154.21.45.19",
-  "message": "Request successful via rotating proxy"
-}`;
+  const [response, setResponse] = useState<ApiResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const isValidUrl = url.startsWith("http");
+
+  /* ---------------- SEND REQUEST ---------------- */
+
+  const handleSendRequest = async () => {
+    setLoading(true);
+    setError(null);
+    setResponse(null);
+
+    // headers array → object
+    const headersObject: Record<string, string> = {};
+    headers.forEach((h) => {
+      if (h.key) headersObject[h.key] = h.value;
+    });
+
+    try {
+      const res = await fetch("/api/proxy/fetch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // API key backend se auth hota hai
+          Authorization: "Bearer YOUR_API_KEY_HERE",
+        },
+        body: JSON.stringify({
+          url,
+          method,
+          headers: headersObject,
+          body:
+            ["POST", "PUT", "PATCH"].includes(method) && body
+              ? body
+              : undefined,
+          rotationMode,
+          ttl,
+          country,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Request failed");
+      }
+
+      setResponse(data);
+      setActiveTab("response");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------------- UI ---------------- */
 
   return (
-    <div className="flex gap-6 max-w-7xl mx-auto p-6">
-      {/* MAIN */}
+    <div className="max-w-7xl mx-auto p-6 flex gap-6">
       <div className="flex-1 space-y-6">
         {/* HEADER */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold">🔀 Proxy Gateway</h1>
-            <p className="text-sm text-gray-500">
-              Send requests via rotating IPs (production-ready)
+            <h1 className="text-2xl font-bold">Proxy Gateway</h1>
+            <p className="text-sm text-muted-foreground">
+              Send real HTTP requests via global rotating or sticky proxies
             </p>
-          </div>
-
-          <div className="flex gap-4 text-sm">
-            <span className="text-green-600">🟢 Proxies Online</span>
-            <span>🌍 IPs: 124</span>
-            <span>⚡ ~900ms</span>
           </div>
         </div>
 
         {/* REQUEST BUILDER */}
-        <div className="bg-white border rounded-lg p-5 space-y-5">
-          {/* URL */}
-          <div>
-            <label className="text-sm font-medium">Target URL</label>
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/api"
-              className="w-full mt-1 border rounded px-3 py-2"
-            />
-          </div>
+        <div className="bg-card border rounded-lg p-5 space-y-5">
+          <h2 className="font-semibold">Request Builder</h2>
 
-          {/* METHOD */}
-          <div>
-            <label className="text-sm font-medium">HTTP Method</label>
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-              className="w-full mt-1 border rounded px-3 py-2"
-            >
-              {["GET", "POST", "PUT", "DELETE"].map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
-          </div>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/api"
+            className="w-full border rounded px-3 py-2"
+          />
 
-          {/* HEADERS */}
-          <div>
-            <label className="text-sm font-medium">Headers</label>
-            <div className="space-y-2 mt-2">
-              {headers.map((h, i) => (
-                <div key={i} className="flex gap-2">
-                  <input
-                    value={h.key}
-                    className="flex-1 border rounded px-2 py-1"
-                    placeholder="Header key"
-                  />
-                  <input
-                    value={h.value}
-                    className="flex-1 border rounded px-2 py-1"
-                    placeholder="Header value"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          >
+            {["GET", "POST", "PUT", "DELETE"].map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
 
-          {/* BODY */}
           {(method === "POST" || method === "PUT") && (
-            <div>
-              <label className="text-sm font-medium">Request Body</label>
-              <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="{ }"
-                className="w-full mt-1 border rounded px-3 py-2 font-mono text-sm"
-                rows={5}
-              />
-            </div>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={4}
+              className="w-full border rounded px-3 py-2 font-mono"
+              placeholder='{"key":"value"}'
+            />
           )}
         </div>
 
-        {/* PROXY CONTROLS */}
-        <div className="bg-white border rounded-lg p-5 space-y-5">
-          {/* COUNTRY */}
-          <div>
-            <label className="text-sm font-medium">Proxy Location</label>
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              className="w-full mt-1 border rounded px-3 py-2"
-            >
-              {["Random", "US", "UK", "DE", "IN"].map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </div>
+        {/* PROXY SETTINGS */}
+        <div className="bg-card border rounded-lg p-5 space-y-5">
+          <select
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          >
+            {["Random", "US", "UK", "DE", "IN"].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
 
-          {/* ROTATION */}
-          <div>
-            <label className="text-sm font-medium">IP Mode</label>
-            <div className="flex gap-4 mt-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={rotationMode === "rotate"}
-                  onChange={() => setRotationMode("rotate")}
-                />
-                Rotate every request
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={rotationMode === "sticky"}
-                  onChange={() => setRotationMode("sticky")}
-                />
-                Sticky IP
-              </label>
-            </div>
-          </div>
-
-          {/* STICKY SETTINGS */}
-          {rotationMode === "sticky" && (
-            <div>
-              <label className="text-sm font-medium">Sticky TTL (seconds)</label>
+          <div className="flex gap-6">
+            <label>
               <input
-                type="number"
-                value={ttl}
-                onChange={(e) => setTtl(Number(e.target.value))}
-                className="w-full mt-1 border rounded px-3 py-2"
-              />
-            </div>
+                type="radio"
+                checked={rotationMode === "rotate"}
+                onChange={() => setRotationMode("rotate")}
+              />{" "}
+              Rotate
+            </label>
+            <label>
+              <input
+                type="radio"
+                checked={rotationMode === "sticky"}
+                onChange={() => setRotationMode("sticky")}
+              />{" "}
+              Sticky
+            </label>
+          </div>
+
+          {rotationMode === "sticky" && (
+            <input
+              type="number"
+              value={ttl}
+              onChange={(e) => setTtl(Number(e.target.value))}
+              className="w-full border rounded px-3 py-2"
+            />
           )}
 
-          {/* CTA */}
           <button
-            onClick={() => setLoading(true)}
-            disabled={loading}
-            className="w-full bg-black text-white py-2 rounded hover:opacity-90"
+            disabled={!isValidUrl || loading}
+            onClick={handleSendRequest}
+            className="w-full bg-black text-white py-2 rounded"
           >
-            {loading ? "Sending…" : "🚀 Send Request via Proxy"}
+            {loading ? "Sending..." : "Send Request via Proxy"}
           </button>
 
-          <p className="text-xs text-gray-500">
-            Counts towards your monthly quota
-          </p>
+          {error && <p className="text-red-500 text-sm">{error}</p>}
         </div>
 
-        {/* RESPONSE */}
-        <div className="bg-white border rounded-lg p-5">
-          <div className="flex gap-4 border-b pb-2 text-sm">
-            {["response", "proxy", "usage"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab as any)}
-                className={`${
-                  activeTab === tab
-                    ? "font-semibold border-b-2 border-black"
-                    : "text-gray-500"
-                }`}
-              >
-                {tab.toUpperCase()}
-              </button>
-            ))}
+        {/* RESPONSE TABS */}
+        {response && (
+          <div className="bg-card border rounded-lg p-5">
+            <div className="flex gap-6 border-b pb-2 text-sm">
+              {["response", "proxy", "usage"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab as any)}
+                  className={
+                    activeTab === tab
+                      ? "font-semibold border-b-2 border-black"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {tab.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 text-sm">
+              {activeTab === "response" && (
+                <pre className="bg-muted p-4 rounded overflow-auto">
+                  {JSON.stringify(response.body, null, 2)}
+                </pre>
+              )}
+
+              {activeTab === "proxy" && response.proxy && (
+                <ul>
+                  <li>IP: {response.proxy.ip}</li>
+                  <li>Country: {response.proxy.country}</li>
+                  <li>Mode: {response.proxy.mode}</li>
+                  <li>Latency: {response.proxy.latencyMs}ms</li>
+                </ul>
+              )}
+
+              {activeTab === "usage" && response.usage && (
+                <ul>
+                  <li>Consumed: {response.usage.consumed}</li>
+                  <li>Remaining: {response.usage.remaining}</li>
+                </ul>
+              )}
+            </div>
           </div>
-
-          <div className="mt-4 text-sm">
-            {activeTab === "response" && (
-              <pre className="bg-gray-100 p-4 rounded overflow-auto">
-                {mockResponse}
-              </pre>
-            )}
-
-            {activeTab === "proxy" && (
-              <ul className="space-y-1">
-                <li>IP used: 154.xx.xx.19</li>
-                <li>Country: US</li>
-                <li>Type: Datacenter</li>
-                <li>Latency: 812ms</li>
-              </ul>
-            )}
-
-            {activeTab === "usage" && (
-              <ul className="space-y-1">
-                <li>Requests used: +1</li>
-                <li>Bandwidth: 34 KB</li>
-                <li>Remaining quota: 9,965</li>
-              </ul>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* SIDEBAR */}
-      <div className="w-72 bg-white border rounded-lg p-5 space-y-4 h-fit sticky top-6">
-        <h2 className="font-semibold">Your Plan</h2>
-        <div className="text-sm space-y-1">
-          <p>Plan: <strong>Pro</strong></p>
-          <p>Requests left: 9,965</p>
-          <p>Bandwidth left: 3.2 GB</p>
-        </div>
-
-        <button className="w-full border rounded py-2 text-sm hover:bg-gray-50">
-          Upgrade Plan →
-        </button>
+        )}
       </div>
     </div>
   );

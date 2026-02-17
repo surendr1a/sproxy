@@ -17,13 +17,15 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
+
   const {
     url,
     method = "GET",
     headers = {},
-    sticky = false,
+    body,
+    rotationMode = "rotate", // rotate | sticky (from frontend)
     ttl = 600,
-    stickySessionId,
     country,
   } = await req.json();
 
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
   const apiKey =
     req.headers.get("x-api-key") ||
     req.headers.get("authorization")?.replace("Bearer ", "");
-
+  console.log("this is the apikey: ", apiKey);
   const auth = verifyApiKey(apiKey || "");
   if (!auth) {
     return NextResponse.json(
@@ -58,16 +60,9 @@ export async function POST(req: NextRequest) {
 
   /* ---------------- VALIDATION ---------------- */
 
-  if (!url) {
+  if (!url || !url.startsWith("http")) {
     return NextResponse.json(
-      { success: false, message: "Target URL is required" },
-      { status: 400 }
-    );
-  }
-
-  if (sticky && !stickySessionId) {
-    return NextResponse.json(
-      { success: false, message: "Session ID is required for sticky mode" },
+      { success: false, message: "Valid target URL is required" },
       { status: 400 }
     );
   }
@@ -79,13 +74,17 @@ export async function POST(req: NextRequest) {
 
   let lastError: any = null;
 
+  const isSticky = rotationMode === "sticky";
+  const stickySessionId = isSticky ? auth.userId : null;
+
   /* ---------------- RETRY LOOP ---------------- */
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const proxyUrl =
-      sticky && stickySessionId
-        ? getStickyProxy(stickySessionId, ttl, () => getRandomProxy(country))
-        : getRandomProxy(country);
+    const proxyUrl = isSticky
+      ? getStickyProxy(stickySessionId!, ttl, () =>
+          getRandomProxy(country)
+        )
+      : getRandomProxy(country);
 
     try {
       const agent = new ProxyAgent(proxyUrl);
@@ -95,21 +94,28 @@ export async function POST(req: NextRequest) {
         undiciFetch(url, {
           method,
           headers,
+          body:
+            ["POST", "PUT", "PATCH"].includes(method.toUpperCase()) && body
+              ? body
+              : undefined,
           dispatcher: agent,
         }),
         timeoutMs
       );
 
       if (response.status >= 500) {
-        throw new Error(`Server error: ${response.status}`);
+        throw new Error(`Upstream server error: ${response.status}`);
       }
 
       // 📦 RESPONSE SIZE GUARD
-      const data = await readResponseWithLimit(
+      const responseBody = await readResponseWithLimit(
         response,
         maxResponseSize
       );
 
+      const latency = Date.now() - startTime;
+
+      /* ---------------- USAGE LOG ---------------- */
 
       recordRequest({
         userId: auth.userId,
@@ -122,13 +128,31 @@ export async function POST(req: NextRequest) {
         status: response.status,
       });
 
-      return new NextResponse(data, {
-        status: response.status,
-        headers: {
-          "content-type":
-            response.headers.get("content-type") || "text/plain",
+      /* ---------------- FRONTEND FRIENDLY RESPONSE ---------------- */
+
+      return NextResponse.json(
+        {
+          success: true,
+          status: response.status,
+          body: responseBody,
+          proxy: {
+            ip: proxyUrl.replace(/^.*@/, "").split(":")[0],
+            country: country || "Random",
+            mode: rotationMode,
+            latencyMs: latency,
+          },
+          usage: {
+            consumed: 1,
+            remaining: rate.remaining,
+          },
         },
-      });
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }
+      );
     } catch (error: any) {
       markProxyAsBad(proxyUrl);
       lastError = error;
@@ -152,6 +176,8 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+
+  /* ---------------- FINAL FAILURE ---------------- */
 
   return NextResponse.json(
     {
