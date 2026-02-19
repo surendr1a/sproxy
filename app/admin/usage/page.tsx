@@ -1,38 +1,52 @@
-import Table from '@/components/admin/Table';
+"use client";
+
+import { useEffect, useState } from "react";
+import Table from "@/components/admin/Table";
+
+type Row = {
+  user: string;
+  plan: string;
+  used: number;
+  failed: number;
+  successRate: string;
+};
 
 const columns = [
-  { key: 'user', label: 'User' },
-  { key: 'plan', label: 'Plan' },
-  { key: 'used', label: 'Used Bandwidth' },
-  { key: 'limit', label: 'Limit' },
-];
-
-const data = [
-  {
-    user: 'user1@test.com',
-    plan: 'Starter',
-    used: '6 GB',
-    limit: '10 GB',
-  },
-  {
-    user: 'user2@test.com',
-    plan: 'Pro',
-    used: '22 GB',
-    limit: '50 GB',
-  },
-  {
-    user: 'user3@test.com',
-    plan: 'Enterprise',
-    used: '120 GB',
-    limit: 'Unlimited',
-  },
+  { key: "user", label: "User" },
+  { key: "plan", label: "Plan" },
+  { key: "used", label: "Requests" },
+  { key: "failed", label: "Failed" },
+  { key: "successRate", label: "Success Rate" },
 ];
 
 export default function UsagePage() {
+  const [rows, setRows] = useState<Row[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/overview")
+      .then((res) => res.json())
+      .then((data) => {
+        const mapped = (data.users || []).map((u: any) => {
+          const success = Math.max((u.requests || 0) - (u.failed || 0), 0);
+          const rate =
+            u.requests > 0 ? `${Math.round((success / u.requests) * 100)}%` : "N/A";
+          return {
+            user: u.email,
+            plan: u.plan,
+            used: u.requests || 0,
+            failed: u.failed || 0,
+            successRate: rate,
+          };
+        });
+        setRows(mapped);
+      })
+      .catch(() => setRows([]));
+  }, []);
+
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">Usage</h2>
-      <Table columns={columns} data={data} />
+      <Table columns={columns} data={rows} />
     </div>
   );
 }

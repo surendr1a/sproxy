@@ -15,7 +15,7 @@ function maskApiKey(key: string) {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   await connectDB()
 
@@ -27,8 +27,10 @@ export async function PATCH(
   if (!session || (session.expiresAt && session.expiresAt < new Date()))
     return NextResponse.json({ error: "Invalid session" }, { status: 401 })
 
+  const { id } = await params
+
   const apiKey = await ApiKey.findOne({
-    _id: params.id,
+    _id: id,
     userId: session.userId,
   })
 

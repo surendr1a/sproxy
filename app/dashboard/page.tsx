@@ -22,6 +22,8 @@ interface DashboardData {
     thisMonth: number
     failed: number
     remaining: number
+    limit: number
+    percentUsed: number
   }
   currentPlan: {
     name: string
@@ -89,8 +91,7 @@ export default function DashboardPage() {
   }
 
   const isTrialExpired = !data.user.planId && data.user.trialRequestsRemaining <= 0
-  // const isNearLimit = data.usage.remaining > 0 && data.usage.remaining <= 10
-  const isNearLimit = 4; // For testing purposes
+  const isNearLimit = data.usage.remaining > 0 && data.usage.remaining <= Math.max(10, Math.floor(data.usage.limit * 0.1))
 
   return (
     <div className="space-y-6">
@@ -169,15 +170,15 @@ export default function DashboardPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Today</span>
-                {/* <span className="font-medium">{data.usage.today} requests</span> */}
+                <span className="font-medium">{data.usage.today} requests</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">This month</span>
-                {/* <span className="font-medium">{data.usage.thisMonth} requests</span> */}
+                <span className="font-medium">{data.usage.thisMonth} requests</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Failed</span>
-                {/* <span className="font-medium text-destructive-foreground">{data.usage.failed}</span> */}
+                <span className="font-medium text-destructive">{data.usage.failed}</span>
               </div>
             </div>
             <Link href="/dashboard/usage" className="mt-4 inline-block">

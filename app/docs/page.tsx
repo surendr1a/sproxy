@@ -3,9 +3,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PublicHeader } from "@/components/public-header"
 import { PublicFooter } from "@/components/public-footer"
-import { ArrowRight, Copy } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 
 export default function DocsPage() {
+  const endpoint = "https://your-domain.com/api/proxy/fetch"
+
   return (
     <div className="flex min-h-screen flex-col">
       <PublicHeader />
@@ -16,30 +18,30 @@ export default function DocsPage() {
           <div className="mb-12">
             <h1 className="mb-4 text-3xl font-bold md:text-4xl">Documentation</h1>
             <p className="text-lg text-muted-foreground">
-              Learn how to integrate ProxyAPI into your applications.
+              Simple guide to understand SProxy, who should use it, and how to use each feature correctly.
             </p>
           </div>
 
           {/* Quick Start */}
           <section className="mb-16">
-            <h2 className="mb-6 text-2xl font-bold">Quick Start</h2>
+            <h2 className="mb-6 text-2xl font-bold">Quick Start (2 Minutes)</h2>
             <Card>
               <CardContent className="pt-6">
                 <p className="mb-4 text-muted-foreground">
-                  Make your first proxied request in seconds:
+                  Make your first proxied request:
                 </p>
                 <div className="relative rounded-lg bg-muted p-4">
                   <pre className="overflow-x-auto font-mono text-sm">
-                    <code>{`curl -X POST https://api.proxyapi.dev/v1/proxy \\
+                    <code>{`curl -X POST ${endpoint} \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://example.com"}'`}</code>
+  -d '{"url":"https://example.com","method":"GET","rotationMode":"rotate","country":"Random"}'`}</code>
                   </pre>
                 </div>
                 <div className="mt-4">
-                  <Link href="/signup">
+                  <Link href="/dashboard/how-to-use">
                     <Button className="gap-2">
-                      Get Your API Key
+                      Open Full User Guide
                       <ArrowRight className="h-4 w-4" />
                     </Button>
                   </Link>
@@ -48,66 +50,66 @@ export default function DocsPage() {
             </Card>
           </section>
 
-          {/* What is a Proxy */}
+          {/* Audience */}
           <section className="mb-16">
-            <h2 className="mb-6 text-2xl font-bold">What is a Proxy?</h2>
+            <h2 className="mb-6 text-2xl font-bold">Who This Product Is For</h2>
             <div className="prose prose-neutral dark:prose-invert max-w-none">
               <p className="text-muted-foreground">
-                A proxy server acts as an intermediary between your application and the target
-                website. Instead of connecting directly, your requests go through the proxy,
-                which forwards them using a different IP address.
+                SProxy is for developers, automation teams, and scraping teams that send many requests and get blocked or rate-limited from a single IP.
               </p>
               <p className="mt-4 text-muted-foreground">
-                This is essential for:
+                Best use-cases:
               </p>
               <ul className="mt-2 space-y-2 text-muted-foreground">
-                <li>Avoiding IP-based rate limiting and blocks</li>
-                <li>Accessing geo-restricted content</li>
-                <li>Maintaining anonymity during web scraping</li>
-                <li>Running multiple automation tasks simultaneously</li>
+                <li>Web scraping at scale</li>
+                <li>SERP and competitor monitoring</li>
+                <li>Multi-step automation workflows</li>
+                <li>Geo-targeted data collection</li>
               </ul>
+              <p className="mt-4 text-muted-foreground">
+                If you only make occasional direct requests, you likely do not need this.
+              </p>
             </div>
           </section>
 
-          {/* How Rotation Works */}
+          {/* Features */}
           <section className="mb-16">
-            <h2 className="mb-6 text-2xl font-bold">How IP Rotation Works</h2>
-            <div className="prose prose-neutral dark:prose-invert max-w-none">
-              <p className="text-muted-foreground">
-                ProxyAPI automatically rotates IP addresses on every request. This means each
-                request to your target website appears to come from a different location.
-              </p>
-              <Card className="mt-6">
-                <CardContent className="pt-6">
-                  <div className="flex flex-col items-center gap-4 text-center">
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <span className="rounded bg-muted px-3 py-1 font-mono text-sm">
-                        Request 1
-                      </span>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <span className="rounded bg-primary/10 px-3 py-1 font-mono text-sm">
-                        IP: 192.168.1.x
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <span className="rounded bg-muted px-3 py-1 font-mono text-sm">
-                        Request 2
-                      </span>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <span className="rounded bg-primary/10 px-3 py-1 font-mono text-sm">
-                        IP: 10.0.0.x
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <span className="rounded bg-muted px-3 py-1 font-mono text-sm">
-                        Request 3
-                      </span>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <span className="rounded bg-primary/10 px-3 py-1 font-mono text-sm">
-                        IP: 172.16.0.x
-                      </span>
-                    </div>
-                  </div>
+            <h2 className="mb-6 text-2xl font-bold">Core Features</h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Proxy Gateway</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Main API entry point. Send any target URL and get response via proxy.
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Rotation Mode</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Uses different proxies across requests to reduce blocking.
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Sticky Sessions</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Keep same proxy identity for stateful flows (login, carts, multi-step actions).
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">IP Check</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Test outgoing IP, status, and latency before running larger jobs.
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Proxy Batches</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Organize campaigns by country, type, and status.
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Usage and Billing</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Track consumption and upgrade plans when limits are reached.
                 </CardContent>
               </Card>
             </div>
@@ -132,24 +134,30 @@ export default function DocsPage() {
                   </div>
                 </CardContent>
               </Card>
-
-              <Card className="border-dashed">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg text-muted-foreground">
-                    Username / Password
-                    <span className="rounded bg-muted px-2 py-0.5 text-xs font-normal">
-                      Coming Soon
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">
-                    Traditional proxy authentication for legacy integrations will be available
-                    soon.
-                  </p>
-                </CardContent>
-              </Card>
             </div>
+          </section>
+
+          {/* Request Body */}
+          <section className="mb-16">
+            <h2 className="mb-6 text-2xl font-bold">Request Body Reference</h2>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="rounded-lg bg-muted p-4">
+                  <pre className="overflow-x-auto font-mono text-sm">
+                    <code>{`{
+  "url": "https://example.com",        // required
+  "method": "GET",                      // optional, default GET
+  "headers": { "User-Agent": "..." },   // optional
+  "body": "{}",                         // optional for POST/PUT/PATCH
+  "rotationMode": "rotate",             // rotate | sticky
+  "ttl": 600,                           // sticky TTL in seconds
+  "stickySessionId": "my-session-1",    // optional sticky identity
+  "country": "US"                       // optional country or Random
+}`}</code>
+                  </pre>
+                </div>
+              </CardContent>
+            </Card>
           </section>
 
           {/* Code Examples */}
@@ -163,10 +171,10 @@ export default function DocsPage() {
                 <CardContent>
                   <div className="rounded-lg bg-muted p-4">
                     <pre className="overflow-x-auto font-mono text-sm">
-                      <code>{`curl -X POST https://api.proxyapi.dev/v1/proxy \\
+                      <code>{`curl -X POST ${endpoint} \\
   -H "Authorization: Bearer pk_your_api_key" \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://example.com"}'`}</code>
+  -d '{"url":"https://example.com","method":"GET","rotationMode":"rotate","country":"Random"}'`}</code>
                     </pre>
                   </div>
                 </CardContent>
@@ -179,14 +187,19 @@ export default function DocsPage() {
                 <CardContent>
                   <div className="rounded-lg bg-muted p-4">
                     <pre className="overflow-x-auto font-mono text-sm">
-                      <code>{`const response = await fetch('https://api.proxyapi.dev/v1/proxy', {
+                      <code>{`const response = await fetch('${endpoint}', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer pk_your_api_key',
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    url: 'https://example.com'
+    url: 'https://example.com',
+    method: 'GET',
+    rotationMode: 'sticky',
+    stickySessionId: 'checkout-flow-1',
+    ttl: 600,
+    country: 'US'
   })
 });
 
@@ -207,12 +220,17 @@ console.log(data);`}</code>
                       <code>{`import requests
 
 response = requests.post(
-    'https://api.proxyapi.dev/v1/proxy',
+    '${endpoint}',
     headers={
         'Authorization': 'Bearer pk_your_api_key',
         'Content-Type': 'application/json',
     },
-    json={'url': 'https://example.com'}
+    json={
+      'url': 'https://example.com',
+      'method': 'GET',
+      'rotationMode': 'rotate',
+      'country': 'Random'
+    }
 )
 
 print(response.json())`}</code>
@@ -229,16 +247,38 @@ print(response.json())`}</code>
             <Card>
               <CardContent className="pt-6">
                 <p className="mb-4 text-muted-foreground">
-                  Successful responses include the proxy details:
+                  Successful response:
                 </p>
                 <div className="rounded-lg bg-muted p-4">
                   <pre className="overflow-x-auto font-mono text-sm">
                     <code>{`{
   "success": true,
-  "proxyIp": "192.168.1.100",
-  "targetUrl": "https://example.com",
-  "responseTime": 245,
-  "statusCode": 200
+  "status": 200,
+  "body": "...target response body...",
+  "proxy": {
+    "ip": "x.x.x.x",
+    "country": "US",
+    "mode": "rotate",
+    "latencyMs": 245
+  },
+  "usage": {
+    "consumed": 1,
+    "remaining": 123
+  }
+}`}</code>
+                  </pre>
+                </div>
+                <p className="mt-4 mb-4 text-muted-foreground">
+                  If proxy pool is unhealthy, API may return direct fallback with warning:
+                </p>
+                <div className="rounded-lg bg-muted p-4">
+                  <pre className="overflow-x-auto font-mono text-sm">
+                    <code>{`{
+  "success": true,
+  "warning": "All configured proxies failed. Served via direct fallback request.",
+  "proxy": {
+    "mode": "direct-fallback"
+  }
 }`}</code>
                   </pre>
                 </div>
@@ -248,54 +288,66 @@ print(response.json())`}</code>
 
           {/* Error Codes */}
           <section className="mb-16">
-            <h2 className="mb-6 text-2xl font-bold">Error Codes</h2>
+            <h2 className="mb-6 text-2xl font-bold">Common Errors</h2>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="py-3 text-left font-medium">Code</th>
-                    <th className="py-3 text-left font-medium">Description</th>
+                    <th className="py-3 text-left font-medium">Status</th>
+                    <th className="py-3 text-left font-medium">Message</th>
+                    <th className="py-3 text-left font-medium">Meaning</th>
                   </tr>
                 </thead>
                 <tbody className="font-mono text-sm">
                   <tr className="border-b border-border">
-                    <td className="py-3 text-destructive-foreground">INVALID_API_KEY</td>
-                    <td className="py-3 font-sans text-muted-foreground">
-                      Missing or invalid API key
-                    </td>
+                    <td className="py-3">401</td>
+                    <td className="py-3 text-destructive-foreground">Invalid or missing API key</td>
+                    <td className="py-3 font-sans text-muted-foreground">Auth header missing or wrong key.</td>
                   </tr>
                   <tr className="border-b border-border">
-                    <td className="py-3 text-destructive-foreground">TRIAL_EXPIRED</td>
-                    <td className="py-3 font-sans text-muted-foreground">
-                      Free trial requests exhausted
-                    </td>
+                    <td className="py-3">400</td>
+                    <td className="py-3 text-destructive-foreground">Valid target URL is required</td>
+                    <td className="py-3 font-sans text-muted-foreground">`url` is missing or not a valid `http/https` URL.</td>
                   </tr>
                   <tr className="border-b border-border">
-                    <td className="py-3 text-destructive-foreground">LIMIT_REACHED</td>
-                    <td className="py-3 font-sans text-muted-foreground">
-                      Monthly request limit reached
-                    </td>
+                    <td className="py-3">429</td>
+                    <td className="py-3 text-destructive-foreground">Rate limit exceeded</td>
+                    <td className="py-3 font-sans text-muted-foreground">Too many requests in current window.</td>
                   </tr>
                   <tr className="border-b border-border">
-                    <td className="py-3 text-destructive-foreground">MISSING_URL</td>
-                    <td className="py-3 font-sans text-muted-foreground">
-                      Target URL not provided in request
-                    </td>
+                    <td className="py-3">502</td>
+                    <td className="py-3 text-destructive-foreground">All proxies failed</td>
+                    <td className="py-3 font-sans text-muted-foreground">Configured proxies could not connect upstream.</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </section>
 
+          {/* Workflow */}
+          <section className="mb-16">
+            <h2 className="mb-6 text-2xl font-bold">Recommended Workflow for New Users</h2>
+            <Card>
+              <CardContent className="pt-6 text-sm text-muted-foreground space-y-2">
+                <p>1. Create API key in `Dashboard → API Keys`.</p>
+                <p>2. Verify outgoing identity in `Dashboard → IP Check`.</p>
+                <p>3. Send real request in `Dashboard → Proxy Gateway`.</p>
+                <p>4. Use sticky mode for stateful tasks and test in `Sticky Sessions`.</p>
+                <p>5. Organize workloads in `Proxy Batches`.</p>
+                <p>6. Monitor limits in `Usage` and upgrade in `Billing`.</p>
+              </CardContent>
+            </Card>
+          </section>
+
           {/* CTA */}
           <section className="rounded-lg border border-border bg-muted/30 p-8 text-center">
-            <h2 className="mb-4 text-xl font-bold">Ready to get started?</h2>
+            <h2 className="mb-4 text-xl font-bold">Ready to start?</h2>
             <p className="mb-6 text-muted-foreground">
-              Get your API key and start making proxied requests in minutes.
+              Go to dashboard and run your first live request now.
             </p>
-            <Link href="/signup">
+            <Link href="/dashboard/proxy">
               <Button size="lg" className="gap-2">
-                Get Your API Key
+                Open Proxy Gateway
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>

@@ -1,38 +1,43 @@
-import Table from '@/components/admin/Table';
+"use client";
+
+import { useEffect, useState } from "react";
+import Table from "@/components/admin/Table";
+
+type ProxyRow = {
+  source: string;
+  totalConfigured: number;
+  status: string;
+};
 
 const columns = [
-  { key: 'type', label: 'Proxy Type' },
-  { key: 'location', label: 'Location' },
-  { key: 'ipCount', label: 'IP Count' },
-  { key: 'status', label: 'Status' },
-];
-
-const data = [
-  {
-    type: 'Residential',
-    location: 'US',
-    ipCount: 1200,
-    status: 'Active',
-  },
-  {
-    type: 'Datacenter',
-    location: 'Germany',
-    ipCount: 500,
-    status: 'Active',
-  },
-  {
-    type: 'Mobile',
-    location: 'India',
-    ipCount: 300,
-    status: 'Paused',
-  },
+  { key: "source", label: "Source" },
+  { key: "totalConfigured", label: "Configured Proxies" },
+  { key: "status", label: "Status" },
 ];
 
 export default function ProxiesPage() {
+  const [rows, setRows] = useState<ProxyRow[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/overview")
+      .then((res) => res.json())
+      .then((data) => {
+        const proxies = data.proxies || {};
+        setRows([
+          {
+            source: proxies.source || "PROXY_POOL",
+            totalConfigured: proxies.totalConfigured || 0,
+            status: (proxies.totalConfigured || 0) > 0 ? "Configured" : "Missing",
+          },
+        ]);
+      })
+      .catch(() => setRows([]));
+  }, []);
+
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">Proxies</h2>
-      <Table columns={columns} data={data} />
+      <Table columns={columns} data={rows} />
     </div>
   );
 }

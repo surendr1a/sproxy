@@ -123,8 +123,31 @@ export default function BillingPage() {
     setUpgrading(selectedPlan.id)
 
     try {
-      await new Promise((r) => setTimeout(r, 1000)) // mock delay
+      const res = await fetch("/api/billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId: selectedPlan.id }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Upgrade failed")
+      }
+      const refresh = await fetch("/api/billing")
+      const refreshedData = await refresh.json()
+      setData((prev) => ({
+        ...prev,
+        plans: Array.isArray(refreshedData?.plans)
+          ? refreshedData.plans
+          : prev.plans,
+        currentPlan: refreshedData?.currentPlan ?? null,
+        subscription: refreshedData?.subscription ?? null,
+        isOnTrial: refreshedData?.isOnTrial ?? false,
+        trialRequestsRemaining:
+          refreshedData?.trialRequestsRemaining ?? prev.trialRequestsRemaining,
+      }))
       setShowCheckout(false)
+    } catch (error: any) {
+      alert(error.message || "Upgrade failed")
     } finally {
       setUpgrading(null)
     }
@@ -299,7 +322,7 @@ export default function BillingPage() {
               Upgrade to {selectedPlan?.name}
             </DialogTitle>
             <DialogDescription>
-              This is a mock checkout flow.
+              This will activate your selected plan immediately.
             </DialogDescription>
           </DialogHeader>
 

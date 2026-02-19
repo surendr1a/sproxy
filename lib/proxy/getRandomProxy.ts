@@ -8,31 +8,64 @@ let badProxies = new Set<string>();
  * Works for all countries if country/type not specified.
  * Example PROXY_POOL: "http://US@165.227.5.10:8888,https://UK@165.227.5.11:8888,http://IN@165.227.5.12:8888"
  */
-export function getRandomProxy(country?: string, type?: string): string {
-  const pool = process.env.PROXY_POOL;
+function normalizeCountry(country?: string): string | undefined {
+  const value = country?.trim().toUpperCase();
+  if (!value || value === "RANDOM" || value === "ANY" || value === "ALL") {
+    return undefined;
+  }
+  return value;
+}
 
-  if (!pool) throw new Error("PROXY_POOL not configured");
+function extractTaggedCountry(proxy: string): string | undefined {
+  const match = proxy.match(/\/\/([A-Z]{2})@/i);
+  return match?.[1]?.toUpperCase();
+}
 
-  let proxies = pool
+function getConfiguredProxies(): string[] {
+  const singleProxy = process.env.PROXY_URL?.trim();
+  const pooledProxies = (process.env.PROXY_POOL || "")
     .split(",")
-    .map(p => p.trim())
-    .filter(p => p && !badProxies.has(p));
+    .map((p) => p.trim())
+    .filter(Boolean);
 
-  // Apply filters only if provided
-  if (country) {
-    proxies = proxies.filter(p => p.toLowerCase().includes(country.toLowerCase()));
+  const all = singleProxy ? [singleProxy, ...pooledProxies] : pooledProxies;
+  return [...new Set(all)];
+}
+
+export function getConfiguredProxyCount(): number {
+  return getConfiguredProxies().length;
+}
+
+export function getRandomProxy(
+  country?: string,
+  type?: string,
+  excluded: Set<string> = new Set()
+): string {
+  const configured = getConfiguredProxies();
+  if (configured.length === 0) {
+    throw new Error("No proxies configured. Set PROXY_URL or PROXY_POOL.");
   }
-  if (country) {
-    proxies = proxies.filter(p => p.toLowerCase().includes(country.toLowerCase()));
-    // skip filter if none match
-    if (proxies.length === 0) proxies = pool.split(",").map(p => p.trim()).filter(p => p);
+
+  let proxies = configured.filter((p) => !badProxies.has(p) && !excluded.has(p));
+
+  const targetCountry = normalizeCountry(country);
+  if (targetCountry) {
+    const byCountry = proxies.filter((p) => {
+      const tagged = extractTaggedCountry(p);
+      if (tagged) return tagged === targetCountry;
+      return p.toUpperCase().includes(targetCountry);
+    });
+    // If no match for requested country, fall back to current healthy pool.
+    if (byCountry.length > 0) proxies = byCountry;
   }
+
   if (type) {
-    proxies = proxies.filter(p => p.toLowerCase().startsWith(type.toLowerCase()));
+    proxies = proxies.filter((p) =>
+      p.toLowerCase().startsWith(type.toLowerCase())
+    );
   }
 
   if (proxies.length === 0) {
-    badProxies.clear(); // reset after exhaustion
     throw new Error("No healthy proxies available");
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type HeaderItem = {
   key: string;
@@ -24,6 +24,12 @@ type ApiResponse = {
   message?: string;
 };
 
+type UserApiKey = {
+  id: string;
+  key: string;
+  status: "active" | "disabled";
+};
+
 export default function ProxyDashboardPage() {
   const [url, setUrl] = useState("");
   const [method, setMethod] = useState("GET");
@@ -42,12 +48,67 @@ export default function ProxyDashboardPage() {
 
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState<string>("");
+  const [loadingApiKey, setLoadingApiKey] = useState(true);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
-  const isValidUrl = url.startsWith("http");
+  const isValidUrl = /^https?:\/\//i.test(url.trim());
+
+  useEffect(() => {
+    const loadApiKey = async () => {
+      setLoadingApiKey(true);
+      setApiKeyError(null);
+
+      try {
+        const keysRes = await fetch("/api/api-keys");
+        const keysData = await keysRes.json();
+
+        if (!keysRes.ok) {
+          throw new Error(keysData.error || "Failed to load API key");
+        }
+
+        const apiKeys: UserApiKey[] = keysData.apiKeys || [];
+        const activeKey = apiKeys.find(
+          (k) => k.status === "active" && k.key
+        );
+
+        if (activeKey) {
+          setApiKey(activeKey.key);
+          return;
+        }
+
+        // Auto-create a key so Proxy page works without manual API key setup.
+        const createRes = await fetch("/api/api-keys", { method: "POST" });
+        const createData = await createRes.json();
+
+        if (!createRes.ok) {
+          throw new Error(createData.error || "Failed to create API key");
+        }
+
+        if (!createData.apiKey?.key) {
+          throw new Error("API key could not be created");
+        }
+
+        setApiKey(createData.apiKey.key);
+      } catch (err: any) {
+        setApiKey("");
+        setApiKeyError(err.message || "Failed to load API key");
+      } finally {
+        setLoadingApiKey(false);
+      }
+    };
+
+    loadApiKey();
+  }, []);
 
   /* ---------------- SEND REQUEST ---------------- */
 
   const handleSendRequest = async () => {
+    if (!apiKey) {
+      setError("Missing API key. Please create an active API key first.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResponse(null);
@@ -63,8 +124,7 @@ export default function ProxyDashboardPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // API key backend se auth hota hai
-          Authorization: "Bearer YOUR_API_KEY_HERE",
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           url,
@@ -83,7 +143,7 @@ export default function ProxyDashboardPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Request failed");
+        throw new Error(data.message || data.error || "Request failed");
       }
 
       setResponse(data);
@@ -183,13 +243,17 @@ export default function ProxyDashboardPage() {
           )}
 
           <button
-            disabled={!isValidUrl || loading}
+            disabled={!isValidUrl || loading || loadingApiKey || !apiKey}
             onClick={handleSendRequest}
             className="w-full bg-black text-white py-2 rounded"
           >
             {loading ? "Sending..." : "Send Request via Proxy"}
           </button>
 
+          {loadingApiKey && (
+            <p className="text-sm text-muted-foreground">Loading API key...</p>
+          )}
+          {apiKeyError && <p className="text-red-500 text-sm">{apiKeyError}</p>}
           {error && <p className="text-red-500 text-sm">{error}</p>}
         </div>
 

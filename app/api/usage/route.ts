@@ -4,8 +4,7 @@ import { connectDB } from "@/lib/db"
 
 import { Session } from "@/lib/models/Session"
 import { User } from "@/lib/models/User"
-import { UsageLog } from "@/lib/models/UsageLog"
-import { plans } from "@/lib/billing/plans"
+import { getUsageSummary } from "@/lib/usage/getUsageSummary"
 
 export async function GET() {
   try {
@@ -30,60 +29,28 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    /* ---------- PLAN LIMIT ---------- */
-    let limit = 50 // free trial default
-
-    if (user.planId) {
-      const plan = plans.find((p) => p.id === user.planId)
-      if (plan && (plan as any).monthlyRequestLimit) {
-        limit = (plan as any).monthlyRequestLimit
-      }
-    }
-
-    /* ---------- USAGE (MONTH) ---------- */
-    const monthPrefix = new Date().toISOString().slice(0, 7) // YYYY-MM
-
-    const monthlyLogs = await UsageLog.find({
-      userId: user._id,
-      date: { $regex: `^${monthPrefix}` },
+    const { usage, daily } = await getUsageSummary({
+      userId: user._id.toString(),
+      planId: user.planId,
+      trialRequestsRemaining: user.trialRequestsRemaining || 0,
     })
-
-    const thisMonth = monthlyLogs.reduce(
-      (sum, l) => sum + (l.requestCount || 0),
-      0
-    )
-
-    const failedThisMonth = monthlyLogs.reduce(
-      (sum, l) => sum + (l.failedCount || 0),
-      0
-    )
-
-    const remaining = Math.max(limit - thisMonth, 0)
-
-    /* ---------- DAILY (LAST 30 DAYS) ---------- */
-    const dailyLogs = await UsageLog.find({ userId: user._id })
-      .sort({ date: 1 })
-      .limit(30)
 
     return NextResponse.json({
       summary: {
-        thisMonth,
-        failed: failedThisMonth,
-        remaining,
-        limit,
-        percentUsed: Math.round((thisMonth / limit) * 100),
+        today: usage.today,
+        thisMonth: usage.thisMonth,
+        failed: usage.failed,
+        remaining: usage.remaining,
+        limit: usage.limit,
+        percentUsed: usage.percentUsed,
       },
 
-      daily: dailyLogs.map((l) => ({
-        date: l.date,
-        requests: l.requestCount,
-        failed: l.failedCount,
-      })),
+      daily,
 
       warnings: {
         trialExpired: !user.planId && user.trialRequestsRemaining <= 0,
-        limitReached: remaining <= 0,
-        nearLimit: remaining > 0 && remaining <= limit * 0.1,
+        limitReached: usage.remaining <= 0,
+        nearLimit: usage.remaining > 0 && usage.remaining <= usage.limit * 0.1,
       },
     })
   } catch (err) {
