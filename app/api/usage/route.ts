@@ -5,8 +5,9 @@ import { connectDB } from "@/lib/db"
 import { Session } from "@/lib/models/Session"
 import { User } from "@/lib/models/User"
 import { getUsageSummary } from "@/lib/usage/getUsageSummary"
+import { resolveWorkspaceForUser } from "@/lib/auth/rbac"
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const cookieStore = await cookies()
     const sessionId = cookieStore.get("session")?.value
@@ -29,8 +30,20 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
+    const { searchParams } = new URL(req.url)
+    const requestedWorkspaceId = searchParams.get("workspaceId")
+    const workspaceId = await resolveWorkspaceForUser(
+      user._id.toString(),
+      requestedWorkspaceId,
+      "viewer"
+    )
+    if (!workspaceId) {
+      return NextResponse.json({ error: "Workspace access denied" }, { status: 403 })
+    }
+
     const { usage, daily } = await getUsageSummary({
       userId: user._id.toString(),
+      workspaceId,
       planId: user.planId,
       trialRequestsRemaining: user.trialRequestsRemaining || 0,
     })
@@ -46,6 +59,7 @@ export async function GET() {
       },
 
       daily,
+      workspaceId,
 
       warnings: {
         trialExpired: !user.planId && user.trialRequestsRemaining <= 0,

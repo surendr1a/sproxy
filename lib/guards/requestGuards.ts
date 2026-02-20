@@ -48,7 +48,7 @@ export const PLAN_GUARDS: Record<
  * ⏱️ Wrap fetch with timeout
  */
 export async function fetchWithTimeout<T>(
-  fetchPromise: Promise<T>,
+  fetchExecutor: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number
 ): Promise<T> {
   const controller = new AbortController();
@@ -58,9 +58,7 @@ export async function fetchWithTimeout<T>(
   }, timeoutMs);
 
   try {
-    // undici fetch respects AbortController
-    // @ts-ignore
-    return await fetchPromise;
+    return await fetchExecutor(controller.signal);
   } catch (err: any) {
     if (err.name === "AbortError") {
       throw new Error("Request timeout exceeded");
@@ -76,6 +74,7 @@ export async function fetchWithTimeout<T>(
  */
 
 type ArrayBufferResponse = {
+  body?: any;
   arrayBuffer(): Promise<ArrayBuffer>;
 };
 
@@ -83,15 +82,41 @@ export async function readResponseWithLimit(
   response: ArrayBufferResponse,
   maxBytes: number
 ): Promise<string> {
-  const buffer = Buffer.from(await response.arrayBuffer());
+  if (response.body) {
+    const reader = response.body.getReader();
+    let total = 0;
+    const chunks: Uint8Array[] = [];
 
-  if (buffer.length > maxBytes) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.length;
+      if (total > maxBytes) {
+        reader.releaseLock();
+        throw new Error(
+          `Response size limit exceeded (${Math.round(maxBytes / (1024 * 1024))}MB)`
+        );
+      }
+      chunks.push(value);
+    }
+
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder("utf-8").decode(merged);
+  }
+
+  const fallbackBuffer = Buffer.from(await response.arrayBuffer());
+  if (fallbackBuffer.length > maxBytes) {
     throw new Error(
       `Response size limit exceeded (${Math.round(maxBytes / (1024 * 1024))}MB)`
     );
   }
-
-  return buffer.toString("utf-8");
+  return fallbackBuffer.toString("utf-8");
 }
 
 /**

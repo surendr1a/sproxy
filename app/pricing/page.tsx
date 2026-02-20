@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { PublicHeader } from "@/components/public-header"
 import { PublicFooter } from "@/components/public-footer"
 import { CheckCircle2 } from "lucide-react"
+import { plans as billingPlans } from "@/lib/billing/plans"
 
 const plans = [
   {
@@ -12,37 +13,26 @@ const plans = [
     name: "Free Trial",
     price: 0,
     description: "Try before you commit",
-    features: ["50 requests", "Speed limited", "Basic dashboard", "No credit card"],
+    features: ["50 requests", "Basic dashboard", "No credit card"],
     cta: "Start Free Trial",
     highlight: false,
+    monthlyRequestLimit: 50,
   },
-  {
-    id: "starter",
-    name: "Starter",
-    price: 19,
-    description: "For small projects",
-    features: ["5,000 requests/mo", "Full speed", "Email support", "Usage analytics"],
-    cta: "Get Started",
-    highlight: false,
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 49,
-    description: "For growing teams",
-    features: ["25,000 requests/mo", "Full speed", "Priority support", "Advanced analytics", "Multiple API keys"],
-    cta: "Go Pro",
-    highlight: true,
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    price: 149,
-    description: "For large scale operations",
-    features: ["100,000 requests/mo", "Full speed", "Dedicated support", "Custom limits", "SLA guarantee"],
-    cta: "Contact Sales",
-    highlight: false,
-  },
+  ...billingPlans.map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: p.price,
+    description:
+      p.id === "starter"
+        ? "For small projects"
+        : p.id === "pro"
+          ? "For growing teams"
+          : "For high scale operations",
+    features: p.features,
+    cta: p.id === "pro" ? "Go Pro" : "Get Started",
+    highlight: p.id === "pro",
+    monthlyRequestLimit: p.monthlyRequestLimit,
+  })),
 ]
 
 export default function PricingPage() {
@@ -125,16 +115,16 @@ export default function PricingPage() {
                     <th className="py-4 text-center font-medium">Free</th>
                     <th className="py-4 text-center font-medium">Starter</th>
                     <th className="py-4 text-center font-medium">Pro</th>
-                    <th className="py-4 text-center font-medium">Enterprise</th>
+                    <th className="py-4 text-center font-medium">Business</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr className="border-b border-border">
                     <td className="py-4 text-muted-foreground">Monthly Requests</td>
                     <td className="py-4 text-center">50</td>
-                    <td className="py-4 text-center">5,000</td>
-                    <td className="py-4 text-center">25,000</td>
-                    <td className="py-4 text-center">100,000</td>
+                    <td className="py-4 text-center">10,000</td>
+                    <td className="py-4 text-center">50,000</td>
+                    <td className="py-4 text-center">200,000</td>
                   </tr>
                   <tr className="border-b border-border">
                     <td className="py-4 text-muted-foreground">Speed</td>
@@ -148,21 +138,21 @@ export default function PricingPage() {
                     <td className="py-4 text-center">Docs</td>
                     <td className="py-4 text-center">Email</td>
                     <td className="py-4 text-center">Priority</td>
-                    <td className="py-4 text-center">Dedicated</td>
+                    <td className="py-4 text-center">Fast-track</td>
                   </tr>
                   <tr className="border-b border-border">
                     <td className="py-4 text-muted-foreground">API Keys</td>
                     <td className="py-4 text-center">1</td>
                     <td className="py-4 text-center">2</td>
                     <td className="py-4 text-center">5</td>
-                    <td className="py-4 text-center">Unlimited</td>
+                    <td className="py-4 text-center">10</td>
                   </tr>
                   <tr className="border-b border-border">
                     <td className="py-4 text-muted-foreground">Overage</td>
                     <td className="py-4 text-center">Blocked</td>
                     <td className="py-4 text-center">Blocked</td>
-                    <td className="py-4 text-center">$0.005/req</td>
-                    <td className="py-4 text-center">Custom</td>
+                    <td className="py-4 text-center">Blocked</td>
+                    <td className="py-4 text-center">Blocked</td>
                   </tr>
                 </tbody>
               </table>

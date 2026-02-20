@@ -30,6 +30,7 @@ import {
   Bar,
 } from "recharts"
 import { AlertTriangle, TrendingUp, TrendingDown, Activity } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 /* ---------------- TYPES ---------------- */
 
@@ -52,6 +53,12 @@ interface UsageData {
     limitReached: boolean
     nearLimit: boolean
   }
+}
+
+interface Workspace {
+  workspaceId: string
+  name: string
+  role: string
 }
 
 /* ---------------- STATIC FALLBACK ---------------- */
@@ -83,9 +90,11 @@ export default function UsagePage() {
   const [data, setData] = useState<UsageData>(FALLBACK_USAGE_DATA)
   const [loading, setLoading] = useState(true)
   const [chartType, setChartType] = useState<"line" | "bar">("bar")
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaceId, setWorkspaceId] = useState("")
 
-  useEffect(() => {
-    fetch("/api/usage")
+  const loadUsage = (wsId?: string) =>
+    fetch(`/api/usage${wsId ? `?workspaceId=${wsId}` : ""}`)
       .then((res) => res.json())
       .then((usageData) => {
         if (!usageData || !usageData.daily) {
@@ -98,7 +107,28 @@ export default function UsagePage() {
         setData(FALLBACK_USAGE_DATA)
       })
       .finally(() => setLoading(false))
+
+  useEffect(() => {
+    const load = async () => {
+      const wsRes = await fetch("/api/workspace")
+      const wsData = await wsRes.json()
+      const list = wsData.workspaces || []
+      setWorkspaces(list)
+      const first = list[0]?.workspaceId || ""
+      setWorkspaceId(first)
+      if (!first) {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
+
+  useEffect(() => {
+    if (workspaceId) {
+      setLoading(true)
+      loadUsage(workspaceId)
+    }
+  }, [workspaceId])
 
   if (loading) {
     return (
@@ -136,6 +166,20 @@ export default function UsagePage() {
         <p className="text-muted-foreground">
           Monitor your API usage and limits
         </p>
+      </div>
+      <div className="w-72">
+        <Select value={workspaceId} onValueChange={setWorkspaceId}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select workspace" />
+          </SelectTrigger>
+          <SelectContent>
+            {workspaces.map((w) => (
+              <SelectItem key={w.workspaceId} value={w.workspaceId}>
+                {w.name} ({w.role})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* WARNINGS */}

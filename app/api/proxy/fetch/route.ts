@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
-import { getRandomProxy, markProxyAsBad } from "@/lib/proxy/getRandomProxy";
+import {
+  getRandomProxy,
+  markProxyAsBad,
+  markProxyAsHealthy,
+} from "@/lib/proxy/getRandomProxy";
 import { getStickyProxy, invalidateStickyProxy } from "@/lib/proxy/stickyProxyManager";
 import { recordRequest } from "@/lib/usage/usageStore";
 import { verifyApiKey } from "@/lib/auth/apiKey";
@@ -16,9 +20,14 @@ import {
   readResponseWithLimit,
   resolvePlan,
 } from "@/lib/guards/requestGuards";
+import { dispatchUserAlert } from "@/lib/alerts/dispatchAlert";
+import { trackEvent } from "@/lib/analytics/trackEvent";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
+const STRICT_PROXY_MODE =
+  process.env.PROXY_STRICT_MODE === "true" ||
+  process.env.NODE_ENV === "production";
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -49,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   /* ---------------- RATE LIMIT ---------------- */
 
-  const rate = checkRateLimit(auth.apiKey, auth.plan);
+  const rate = await checkRateLimit(auth.apiKey, auth.plan);
   if (!rate.allowed) {
     return NextResponse.json(
       {
@@ -91,10 +100,10 @@ export async function POST(req: NextRequest) {
 
     try {
       proxyUrl = isSticky
-        ? getStickyProxy(stickyKey!, ttl, () =>
+        ? await getStickyProxy(stickyKey!, ttl, () =>
             getRandomProxy(country, undefined, attemptedProxies)
           )
-        : getRandomProxy(country, undefined, attemptedProxies);
+        : await getRandomProxy(country, undefined, attemptedProxies);
     } catch (error: any) {
       lastError = error;
       break;
@@ -107,7 +116,8 @@ export async function POST(req: NextRequest) {
 
       // ⏱️ TIMEOUT GUARD
       const response = await fetchWithTimeout(
-        undiciFetch(url, {
+        (signal) =>
+          undiciFetch(url, {
           method,
           headers,
           body:
@@ -115,6 +125,7 @@ export async function POST(req: NextRequest) {
               ? body
               : undefined,
           dispatcher: agent,
+          signal,
         }),
         timeoutMs
       );
@@ -130,6 +141,7 @@ export async function POST(req: NextRequest) {
       );
 
       const latency = Date.now() - startTime;
+      await markProxyAsHealthy(proxyUrl);
 
       /* ---------------- USAGE LOG ---------------- */
 
@@ -147,7 +159,11 @@ export async function POST(req: NextRequest) {
       await connectDB();
       await Promise.all([
         ApiKey.updateOne({ key: auth.apiKey }, { lastUsedAt: new Date() }),
-        persistUsageEvent({ userId: auth.userId, success: true }),
+        persistUsageEvent({
+          userId: auth.userId,
+          workspaceId: auth.workspaceId,
+          success: true,
+        }),
       ]);
       if (auth.userId && auth.plan === "free") {
         await User.updateOne(
@@ -155,6 +171,16 @@ export async function POST(req: NextRequest) {
           { $inc: { trialRequestsRemaining: -1 } }
         );
       }
+      await trackEvent({
+        userId: auth.userId,
+        event: "proxy_request_success",
+        source: "proxy.fetch",
+        metadata: {
+          mode: rotationMode,
+          country: country || "Random",
+          status: response.status,
+        },
+      });
 
       /* ---------------- FRONTEND FRIENDLY RESPONSE ---------------- */
 
@@ -182,9 +208,9 @@ export async function POST(req: NextRequest) {
         }
       );
     } catch (error: any) {
-      markProxyAsBad(proxyUrl);
+      await markProxyAsBad(proxyUrl);
       if (isSticky && stickyKey) {
-        invalidateStickyProxy(stickyKey, proxyUrl);
+        await invalidateStickyProxy(stickyKey, proxyUrl);
       }
       lastError = error;
 
@@ -210,17 +236,56 @@ export async function POST(req: NextRequest) {
 
   /* ---------------- FINAL FAILURE ---------------- */
 
+  if (STRICT_PROXY_MODE) {
+    await connectDB();
+    await Promise.all([
+      ApiKey.updateOne({ key: auth.apiKey }, { lastUsedAt: new Date() }),
+      persistUsageEvent({
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+        success: false,
+      }),
+    ]);
+    if (auth.userId && auth.plan === "free") {
+      await User.updateOne(
+        { _id: auth.userId, trialRequestsRemaining: { $gt: 0 } },
+        { $inc: { trialRequestsRemaining: -1 } }
+      );
+    }
+    await dispatchUserAlert({
+      userId: auth.userId,
+      event: "proxy.all_failed",
+      payload: {
+        url,
+        mode: rotationMode,
+        country: country || "Random",
+        error: lastError?.message,
+      },
+    });
+    return NextResponse.json(
+      {
+        success: false,
+        message: "All proxies failed",
+        error: lastError?.message,
+        strict: true,
+      },
+      { status: 502 }
+    );
+  }
+
   // Fallback for dashboard usability when proxy pool is temporarily unhealthy.
   try {
     const directResponse = await fetchWithTimeout(
-      undiciFetch(url, {
+      (signal) =>
+        undiciFetch(url, {
         method,
         headers,
         body:
           ["POST", "PUT", "PATCH"].includes(method.toUpperCase()) && body
             ? body
             : undefined,
-      }),
+          signal,
+        }),
       timeoutMs
     );
 
@@ -243,7 +308,11 @@ export async function POST(req: NextRequest) {
     await connectDB();
     await Promise.all([
       ApiKey.updateOne({ key: auth.apiKey }, { lastUsedAt: new Date() }),
-      persistUsageEvent({ userId: auth.userId, success: true }),
+      persistUsageEvent({
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+        success: true,
+      }),
     ]);
     if (auth.userId && auth.plan === "free") {
       await User.updateOne(
@@ -251,6 +320,15 @@ export async function POST(req: NextRequest) {
         { $inc: { trialRequestsRemaining: -1 } }
       );
     }
+    await dispatchUserAlert({
+      userId: auth.userId,
+      event: "proxy.direct_fallback",
+      payload: {
+        url,
+        mode: rotationMode,
+        country: country || "Random",
+      },
+    });
 
     return NextResponse.json(
       {
@@ -279,7 +357,11 @@ export async function POST(req: NextRequest) {
   await connectDB();
   await Promise.all([
     ApiKey.updateOne({ key: auth.apiKey }, { lastUsedAt: new Date() }),
-    persistUsageEvent({ userId: auth.userId, success: false }),
+    persistUsageEvent({
+      userId: auth.userId,
+      workspaceId: auth.workspaceId,
+      success: false,
+    }),
   ]);
   if (auth.userId && auth.plan === "free") {
     await User.updateOne(

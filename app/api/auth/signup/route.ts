@@ -5,6 +5,8 @@ import { connectDB } from "@/lib/db"
 import { User } from "@/lib/models/User"
 import { Session } from "@/lib/models/Session"
 import { hashPassword } from "@/lib/auth/password"
+import { getOrCreateDefaultWorkspace } from "@/lib/auth/rbac"
+import { trackEvent } from "@/lib/analytics/trackEvent"
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,10 +44,18 @@ export async function POST(req: NextRequest) {
       passwordHash,
     })
 
+    await getOrCreateDefaultWorkspace(user._id.toString())
+
     // 2️⃣ Create session
     const session = await Session.create({
       userId: user._id,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    })
+
+    await trackEvent({
+      userId: user._id.toString(),
+      event: "signup_completed",
+      source: "auth.signup",
     })
 
     // 3️⃣ Set session cookie

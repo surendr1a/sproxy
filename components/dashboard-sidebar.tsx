@@ -15,6 +15,9 @@ import {
   LogOut,
   Layers,
   ShieldCheck,
+  BellRing,
+  Users,
+  Activity,
 } from "lucide-react"
 import { useState } from "react"
 import { ConfirmModal } from "./ui/confirm-modal"
@@ -33,6 +36,9 @@ const navItems = [
   { href: "/dashboard/api-keys", label: "API Keys", icon: Key },
   { href: "/dashboard/usage", label: "Usage", icon: BarChart3 },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
+  { href: "/dashboard/alerts", label: "Alerts", icon: BellRing },
+  { href: "/dashboard/team", label: "Team", icon: Users },
+  { href: "/dashboard/status", label: "Status", icon: Activity },
   { href: "/dashboard/how-to-use", label: "How to Use", icon: BookOpen },
   { href: "/dashboard/support", label: "Support", icon: HelpCircle },
 ]

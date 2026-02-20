@@ -58,16 +58,16 @@ const FALLBACK_DATA: BillingData = {
     {
       id: "pro",
       name: "Pro",
-      monthlyRequestLimit: 10000,
-      price: 29,
-      features: ["Priority support", "Higher limits", "Analytics"],
+      monthlyRequestLimit: 50000,
+      price: 79,
+      features: ["Priority support", "Advanced sticky sessions", "Country targeting"],
     },
     {
       id: "business",
       name: "Business",
-      monthlyRequestLimit: 50000,
-      price: 99,
-      features: ["Dedicated support", "Custom limits", "SLA"],
+      monthlyRequestLimit: 200000,
+      price: 199,
+      features: ["Fast-track support", "Dedicated pools", "Higher concurrency"],
     },
   ],
   currentPlan: null,
@@ -131,6 +131,11 @@ export default function BillingPage() {
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || "Upgrade failed")
+      }
+      const payload = await res.json()
+      if (payload?.mode === "razorpay" && payload?.checkoutUrl) {
+        window.location.href = payload.checkoutUrl
+        return
       }
       const refresh = await fetch("/api/billing")
       const refreshedData = await refresh.json()
@@ -308,7 +313,7 @@ export default function BillingPage() {
           <div>
             <h3 className="font-medium">Payment Method</h3>
             <p className="text-sm text-muted-foreground">
-              Stripe integration will be added in production.
+              Billing is handled via Razorpay secure checkout.
             </p>
           </div>
         </CardContent>

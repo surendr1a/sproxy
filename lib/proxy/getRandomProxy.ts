@@ -1,6 +1,10 @@
 // lib/proxy/getRandomProxy.ts
+import { connectDB } from "@/lib/db";
+import { ProxyHealth } from "@/lib/models/ProxyHealth";
+import { getRuntimeProxyPool } from "@/lib/proxy/providerFactory";
 
-let badProxies = new Set<string>();
+const badProxies = new Map<string, number>();
+const DEFAULT_BAD_TTL_MS = Number(process.env.PROXY_BAD_TTL_MS || 120000);
 
 /**
  * Returns a random healthy proxy from the pool.
@@ -21,32 +25,43 @@ function extractTaggedCountry(proxy: string): string | undefined {
   return match?.[1]?.toUpperCase();
 }
 
-function getConfiguredProxies(): string[] {
-  const singleProxy = process.env.PROXY_URL?.trim();
-  const pooledProxies = (process.env.PROXY_POOL || "")
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
+function clearExpiredBadProxies() {
+  const now = Date.now();
+  for (const [proxy, until] of badProxies.entries()) {
+    if (until <= now) badProxies.delete(proxy);
+  }
+}
 
-  const all = singleProxy ? [singleProxy, ...pooledProxies] : pooledProxies;
-  return [...new Set(all)];
+function getConfiguredProxies(): string[] {
+  return getRuntimeProxyPool();
 }
 
 export function getConfiguredProxyCount(): number {
   return getConfiguredProxies().length;
 }
 
-export function getRandomProxy(
+export async function getRandomProxy(
   country?: string,
   type?: string,
   excluded: Set<string> = new Set()
-): string {
+): Promise<string> {
   const configured = getConfiguredProxies();
   if (configured.length === 0) {
     throw new Error("No proxies configured. Set PROXY_URL or PROXY_POOL.");
   }
 
-  let proxies = configured.filter((p) => !badProxies.has(p) && !excluded.has(p));
+  clearExpiredBadProxies();
+  await connectDB();
+  const now = new Date();
+  const persistedBad = await ProxyHealth.find({
+    status: "bad",
+    badUntil: { $gt: now },
+  }).select("proxy");
+  const persistedBadSet = new Set(persistedBad.map((p: any) => p.proxy as string));
+
+  let proxies = configured.filter(
+    (p) => !badProxies.has(p) && !persistedBadSet.has(p) && !excluded.has(p)
+  );
 
   const targetCountry = normalizeCountry(country);
   if (targetCountry) {
@@ -72,7 +87,53 @@ export function getRandomProxy(
   return proxies[Math.floor(Math.random() * proxies.length)];
 }
 
-export function markProxyAsBad(proxy: string) {
-  console.log("🚫 Marking proxy as bad:", proxy);
-  badProxies.add(proxy);
+export async function markProxyAsBad(proxy: string) {
+  console.log("Marking proxy as bad:", proxy);
+  const badUntil = new Date(Date.now() + DEFAULT_BAD_TTL_MS);
+  badProxies.set(proxy, badUntil.getTime());
+  await connectDB();
+  await ProxyHealth.updateOne(
+    { proxy },
+    {
+      proxy,
+      status: "bad",
+      badUntil,
+      lastFailureAt: new Date(),
+    },
+    { upsert: true }
+  );
+}
+
+export async function markProxyAsHealthy(proxy: string) {
+  badProxies.delete(proxy);
+  await connectDB();
+  await ProxyHealth.updateOne(
+    { proxy },
+    {
+      proxy,
+      status: "healthy",
+      badUntil: null,
+      lastSuccessAt: new Date(),
+    },
+    { upsert: true }
+  );
+}
+
+export async function getProxyHealthSnapshot() {
+  clearExpiredBadProxies();
+  await connectDB();
+  const total = getConfiguredProxies();
+  const now = new Date();
+  const persistedBad = await ProxyHealth.find({
+    status: "bad",
+    badUntil: { $gt: now },
+  }).select("proxy");
+  const persistedBadSet = new Set(persistedBad.map((p: any) => p.proxy as string));
+  const bad = total.filter((p) => badProxies.has(p) || persistedBadSet.has(p));
+  return {
+    total: total.length,
+    badCount: bad.length,
+    healthyCount: total.length - bad.length,
+    bad,
+  };
 }

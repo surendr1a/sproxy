@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
+    "build": "npm run env:check && next build",
+    "dev": "npm run env:check && next dev",
+    "env:check": "node scripts/check-env-single-source.js",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "npm run env:check && next start"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -47,7 +48,6 @@
     "embla-carousel-react": "8.5.1",
     "https-proxy-agent": "^7.0.6",
     "input-otp": "1.4.1",
-    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.454.0",
     "mongoose": "^9.1.5",
     "next": "^15.1.6",
@@ -67,7 +67,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",

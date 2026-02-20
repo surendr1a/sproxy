@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { getAuthUser } from "@/lib/auth/getAuthUser"
 import { getUsageSummary } from "@/lib/usage/getUsageSummary"
 import { plans } from "@/lib/billing/plans"
+import { resolveWorkspaceForUser } from "@/lib/auth/rbac"
 
 export async function GET() {
   const user = await getAuthUser()
@@ -14,8 +15,14 @@ export async function GET() {
     )
   }
 
+  const workspaceId = await resolveWorkspaceForUser(user.id, null, "viewer")
+  if (!workspaceId) {
+    return NextResponse.json({ error: "Workspace access denied" }, { status: 403 })
+  }
+
   const { usage } = await getUsageSummary({
     userId: user.id,
+    workspaceId,
     planId: user.planId,
     trialRequestsRemaining: user.trialRequestsRemaining || 0,
   })
@@ -25,7 +32,7 @@ export async function GET() {
     : null
 
   return NextResponse.json({
-    user,
+    user: { ...user, workspaceId },
     usage,
     currentPlan,
   })

@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { connectDB } from "@/lib/db"
 import { User } from "@/lib/models/User"
 import { Subscription } from "@/lib/models/Subscription"
+import { ApiKey } from "@/lib/models/ApiKey"
 import { plans } from "@/lib/billing/plans"
 import { getAuthUser } from "@/lib/auth/getAuthUser"
+import { createCheckoutSession } from "@/lib/billing/provider"
+import { trackEvent } from "@/lib/analytics/trackEvent"
 
 /**
  * ======================
@@ -36,6 +39,7 @@ export async function GET() {
 
     return NextResponse.json({
       plans,
+      provider: process.env.BILLING_PROVIDER || "manual",
       currentPlan,
       subscription: subscription
         ? {
@@ -79,6 +83,32 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB()
+    const user = await User.findById(authUser.id).select("email")
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    await trackEvent({
+      userId: authUser.id,
+      event: "plan_checkout_started",
+      source: "billing.api",
+      metadata: { planId },
+    })
+
+    const checkout = await createCheckoutSession({
+      userId: authUser.id,
+      userEmail: user.email,
+      planId,
+    })
+
+    // Razorpay flow: complete on webhook after payment success.
+    if (checkout.mode === "razorpay") {
+      return NextResponse.json({
+        success: true,
+        mode: "razorpay",
+        checkoutUrl: checkout.checkoutUrl,
+      })
+    }
 
     // 1️⃣ Expire existing active subscription (safety)
     await Subscription.updateMany(
@@ -95,7 +125,7 @@ export async function POST(req: NextRequest) {
       userId: authUser.id,
       planId,
       renewsAt,
-      provider: "manual", // later → stripe
+      provider: "manual",
     })
 
     // 4️⃣ Update user plan snapshot
@@ -103,6 +133,14 @@ export async function POST(req: NextRequest) {
       planId,
       planExpiresAt: renewsAt,
       trialRequestsRemaining: 0, // ⛔ trial ends after paid
+    })
+    await ApiKey.updateMany({ userId: authUser.id }, { planSnapshot: planId })
+
+    await trackEvent({
+      userId: authUser.id,
+      event: "plan_subscription_activated",
+      source: "billing.manual",
+      metadata: { planId },
     })
 
     return NextResponse.json({

@@ -1,32 +1,39 @@
 // lib/proxy/stickyProxyManager.ts
+import { connectDB } from "@/lib/db";
+import { StickySession } from "@/lib/models/StickySession";
 
-const stickyMap = new Map<string, { proxy: string; expires: number }>();
+export async function getStickyProxy(
+  sessionId: string,
+  ttl: number,
+  getRandomProxy: () => Promise<string> | string
+): Promise<string> {
+  await connectDB();
+  const now = new Date();
 
-export function getStickyProxy(sessionId: string, ttl: number, getRandomProxy: () => string): string {
-  const now = Date.now();
+  const existing = await StickySession.findOne({
+    sessionId,
+    expiresAt: { $gt: now },
+  }).select("proxy");
+  if (existing?.proxy) return existing.proxy;
 
-  if (stickyMap.has(sessionId)) {
-    const record = stickyMap.get(sessionId)!;
-    if (record.expires > now) {
-      return record.proxy; // same proxy within TTL
-    }
-  }
+  const proxy = await getRandomProxy();
+  const expiresAt = new Date(Date.now() + ttl * 1000);
 
-  // Assign new proxy
-  const proxy = getRandomProxy();
-  stickyMap.set(sessionId, { proxy, expires: now + ttl * 1000 });
+  await StickySession.findOneAndUpdate(
+    { sessionId },
+    { sessionId, proxy, expiresAt },
+    { upsert: true, new: true }
+  );
+
   return proxy;
 }
 
-export function invalidateStickyProxy(sessionId: string, proxy?: string) {
-  if (!stickyMap.has(sessionId)) return;
+export async function invalidateStickyProxy(sessionId: string, proxy?: string) {
+  await connectDB();
   if (!proxy) {
-    stickyMap.delete(sessionId);
+    await StickySession.deleteOne({ sessionId });
     return;
   }
 
-  const current = stickyMap.get(sessionId);
-  if (current?.proxy === proxy) {
-    stickyMap.delete(sessionId);
-  }
+  await StickySession.deleteOne({ sessionId, proxy });
 }

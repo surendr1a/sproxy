@@ -6,6 +6,7 @@ import { Subscription } from "@/lib/models/Subscription";
 import { UsageLog } from "@/lib/models/UsageLog";
 import { plans } from "@/lib/billing/plans";
 import { getConfiguredProxyCount } from "@/lib/proxy/getRandomProxy";
+import { ProductEvent } from "@/lib/models/ProductEvent";
 
 export async function GET() {
   const admin = await requireAdminUser();
@@ -16,12 +17,14 @@ export async function GET() {
   await connectDB();
 
   const monthPrefix = new Date().toISOString().slice(0, 7);
-  const [users, activeSubscriptions, monthlyUsage] = await Promise.all([
+  const [users, activeSubscriptions, monthlyUsage, funnelSignup, funnelPaid] = await Promise.all([
     User.find({}).select("email planId status trialRequestsRemaining createdAt"),
     Subscription.find({ status: "active" }).select("planId status renewsAt"),
     UsageLog.find({ date: { $regex: `^${monthPrefix}` } }).select(
       "userId requestCount failedCount"
     ),
+    ProductEvent.distinct("userId", { event: "signup_completed" }),
+    ProductEvent.distinct("userId", { event: "plan_subscription_activated" }),
   ]);
 
   const totalRequests = monthlyUsage.reduce((sum, log) => sum + (log.requestCount || 0), 0);
@@ -74,6 +77,10 @@ export async function GET() {
     proxies: {
       totalConfigured: getConfiguredProxyCount(),
       source: "PROXY_URL/PROXY_POOL",
+    },
+    funnel: {
+      signedUpUsers: funnelSignup.filter(Boolean).length,
+      paidUsers: funnelPaid.filter(Boolean).length,
     },
   });
 }

@@ -6,9 +6,11 @@ function dayKey(date = new Date()) {
 
 export async function persistUsageEvent({
   userId,
+  workspaceId,
   success,
 }: {
   userId?: string;
+  workspaceId?: string | null;
   success: boolean;
 }) {
   if (!userId) return;
@@ -16,7 +18,7 @@ export async function persistUsageEvent({
   const date = dayKey();
 
   await UsageLog.updateOne(
-    { userId, date },
+    { userId, workspaceId: workspaceId || null, date },
     {
       $inc: {
         requestCount: 1,
@@ -24,6 +26,7 @@ export async function persistUsageEvent({
       },
       $setOnInsert: {
         bytesTransferred: 0,
+        workspaceId: workspaceId || null,
       },
     },
     { upsert: true }

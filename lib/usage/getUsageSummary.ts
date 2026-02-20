@@ -3,23 +3,28 @@ import { plans } from "@/lib/billing/plans";
 
 export async function getUsageSummary({
   userId,
+  workspaceId,
   planId,
   trialRequestsRemaining,
 }: {
   userId: string;
+  workspaceId?: string | null;
   planId?: string | null;
   trialRequestsRemaining: number;
 }) {
   const monthPrefix = new Date().toISOString().slice(0, 7);
   const today = new Date().toISOString().slice(0, 10);
 
+  const filter: Record<string, unknown> = { userId };
+  if (workspaceId) filter.workspaceId = workspaceId;
+
   const [monthlyLogs, todayLog, dailyLogs] = await Promise.all([
     UsageLog.find({
-      userId,
+      ...filter,
       date: { $regex: `^${monthPrefix}` },
     }),
-    UsageLog.findOne({ userId, date: today }),
-    UsageLog.find({ userId }).sort({ date: 1 }).limit(30),
+    UsageLog.findOne({ ...filter, date: today }),
+    UsageLog.find(filter).sort({ date: 1 }).limit(30),
   ]);
 
   const thisMonth = monthlyLogs.reduce((sum, l) => sum + (l.requestCount || 0), 0);

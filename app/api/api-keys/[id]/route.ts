@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db"
 import { ApiKey } from "@/lib/models/ApiKey"
 import { Session } from "@/lib/models/Session"
 import crypto from "crypto"
+import { User } from "@/lib/models/User"
 
 function generateApiKey() {
   return `pk_${crypto.randomBytes(24).toString("hex")}`
@@ -41,9 +42,11 @@ export async function PATCH(
 
   if (body.action === "regenerate") {
     const newKey = generateApiKey()
+    const user = await User.findById(session.userId).select("planId")
 
     apiKey.key = newKey
     apiKey.maskedKey = maskApiKey(newKey)
+    apiKey.planSnapshot = user?.planId || "free"
     apiKey.createdAt = new Date()
     await apiKey.save()
 

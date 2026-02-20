@@ -269,7 +269,7 @@ print(response.json())`}</code>
                   </pre>
                 </div>
                 <p className="mt-4 mb-4 text-muted-foreground">
-                  If proxy pool is unhealthy, API may return direct fallback with warning:
+                  In strict mode (default for production), unhealthy proxy pool returns 502. In non-strict mode, API may use direct fallback:
                 </p>
                 <div className="rounded-lg bg-muted p-4">
                   <pre className="overflow-x-auto font-mono text-sm">

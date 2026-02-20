@@ -25,7 +25,7 @@ const faqs = [
   {
     question: "What happens when I hit my rate limit?",
     answer:
-      "If you reach your monthly request limit, the API will return a LIMIT_REACHED error. Your requests will be blocked until either your plan renews next month, or you upgrade to a higher tier plan.",
+      "If you exceed your current rate/plan limits, API returns HTTP 429 (Rate limit exceeded) and requests are blocked until reset or plan upgrade.",
   },
   {
     question: "How does IP rotation work?",
@@ -35,7 +35,7 @@ const faqs = [
   {
     question: "What authentication methods are supported?",
     answer:
-      "Currently, we support API key authentication via Bearer tokens. Simply include your API key in the Authorization header of your requests. Username/password authentication is coming soon.",
+      "API access uses Bearer API keys. Dashboard login supports email/password and Google authentication.",
   },
   // {
   //   question: "Is there a refund policy?",

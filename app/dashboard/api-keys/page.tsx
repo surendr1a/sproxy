@@ -25,6 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Copy, Check, RefreshCw, Power, PowerOff, Plus, Loader2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface ApiKey {
   id: string
@@ -35,15 +36,24 @@ interface ApiKey {
   lastUsedAt: string | null
 }
 
+interface Workspace {
+  workspaceId: string
+  name: string
+  role: string
+}
+
 export default function ApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaceId, setWorkspaceId] = useState<string>("")
 
-  const fetchApiKeys = async () => {
+  const fetchApiKeys = async (wsId?: string) => {
     try {
-      const res = await fetch("/api/api-keys")
+      const query = wsId ? `?workspaceId=${wsId}` : ""
+      const res = await fetch(`/api/api-keys${query}`)
       const data = await res.json()
       if (data.apiKeys) {
         setApiKeys(data.apiKeys)
@@ -56,8 +66,25 @@ export default function ApiKeysPage() {
   }
 
   useEffect(() => {
-    fetchApiKeys()
+    const load = async () => {
+      const wsRes = await fetch("/api/workspace")
+      const wsData = await wsRes.json()
+      const list = wsData.workspaces || []
+      setWorkspaces(list)
+      const first = list[0]?.workspaceId || ""
+      setWorkspaceId(first)
+      if (!first) {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
+
+  useEffect(() => {
+    if (workspaceId) {
+      fetchApiKeys(workspaceId)
+    }
+  }, [workspaceId])
 
   const copyKey = async (id: string, key: string) => {
     await navigator.clipboard.writeText(key)
@@ -74,7 +101,7 @@ export default function ApiKeysPage() {
         body: JSON.stringify({ action: "regenerate" }),
       })
       if (res.ok) {
-        await fetchApiKeys()
+        await fetchApiKeys(workspaceId)
       }
     } finally {
       setActionLoading(null)
@@ -91,7 +118,7 @@ export default function ApiKeysPage() {
         body: JSON.stringify({ status: newStatus }),
       })
       if (res.ok) {
-        await fetchApiKeys()
+        await fetchApiKeys(workspaceId)
       }
     } finally {
       setActionLoading(null)
@@ -101,9 +128,13 @@ export default function ApiKeysPage() {
   const createNewKey = async () => {
     setActionLoading("new")
     try {
-      const res = await fetch("/api/api-keys", { method: "POST" })
+      const res = await fetch("/api/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      })
       if (res.ok) {
-        await fetchApiKeys()
+        await fetchApiKeys(workspaceId)
       }
     } finally {
       setActionLoading(null)
@@ -125,6 +156,20 @@ export default function ApiKeysPage() {
         <div>
           <h1 className="text-2xl font-bold">API Keys</h1>
           <p className="text-muted-foreground">Manage your API keys for accessing the proxy</p>
+        </div>
+        <div className="w-72">
+          <Select value={workspaceId} onValueChange={setWorkspaceId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select workspace" />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaces.map((w) => (
+                <SelectItem key={w.workspaceId} value={w.workspaceId}>
+                  {w.name} ({w.role})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <Button onClick={createNewKey} disabled={actionLoading === "new"}>
           {actionLoading === "new" ? (

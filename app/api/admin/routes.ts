@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server"
-import { verifyAdmin } from "@/lib/auth/adminauth"
+import { NextResponse } from "next/server"
+import { requireAdminUser } from "@/lib/auth/requireAdminUser"
 import { getProxyProvider } from "@/lib/proxy/provider"
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   /* ---------------- ADMIN AUTH ---------------- */
-  const admin = await verifyAdmin(req)
+  const admin = await requireAdminUser()
   if (!admin) {
     return NextResponse.json(
       { success: false, message: "Unauthorized" },

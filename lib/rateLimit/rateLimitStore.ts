@@ -1,30 +1,41 @@
 // lib/rateLimit/rateLimitStore.ts
+import { connectDB } from "@/lib/db";
+import { RateLimitCounter } from "@/lib/models/RateLimitCounter";
 
 type RateLimitRecord = {
   count: number;
   resetAt: number;
 };
 
-const store = new Map<string, RateLimitRecord>();
-
-export function getRateLimitRecord(key: string): RateLimitRecord {
-  const now = Date.now();
-  const existing = store.get(key);
-
-  // reset daily (UTC midnight style simplified)
-  if (!existing || existing.resetAt < now) {
-    const tomorrow = now + 24 * 60 * 60 * 1000;
-    const record = { count: 0, resetAt: tomorrow };
-    store.set(key, record);
-    return record;
-  }
-
-  return existing;
+function getUtcDateKey(now = new Date()) {
+  return now.toISOString().slice(0, 10);
 }
 
-export function incrementRateLimit(key: string) {
-  const record = getRateLimitRecord(key);
-  record.count += 1;
-  store.set(key, record);
-  return record;
+function nextUtcMidnight(now = new Date()) {
+  const next = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0)
+  );
+  return next;
+}
+
+export async function incrementRateLimit(key: string): Promise<RateLimitRecord> {
+  await connectDB();
+
+  const now = new Date();
+  const dateKey = getUtcDateKey(now);
+  const expiresAt = nextUtcMidnight(now);
+
+  const doc = await RateLimitCounter.findOneAndUpdate(
+    { key, dateKey },
+    {
+      $inc: { count: 1 },
+      $setOnInsert: { key, dateKey, expiresAt, count: 0 },
+    },
+    { upsert: true, new: true }
+  ).select("count expiresAt");
+
+  return {
+    count: doc?.count || 1,
+    resetAt: (doc?.expiresAt || expiresAt).getTime(),
+  };
 }

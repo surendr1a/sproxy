@@ -6,8 +6,8 @@ import { PlanType } from "@/lib/guards/requestGuards";
 const FREE_LIMIT = 100;
 const PAID_LIMIT = 10_000;
 
-export function checkRateLimit(apiKey: string, plan: PlanType) {
-  const record = incrementRateLimit(apiKey);
+export async function checkRateLimit(apiKey: string, plan: PlanType) {
+  const record = await incrementRateLimit(apiKey);
 
   // 👇 paid plans
   const isPaid =

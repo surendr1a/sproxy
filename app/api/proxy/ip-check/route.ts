@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { getAuthUser } from "@/lib/auth/getAuthUser";
-import { getRandomProxy, markProxyAsBad } from "@/lib/proxy/getRandomProxy";
+import {
+  getRandomProxy,
+  markProxyAsBad,
+  markProxyAsHealthy,
+} from "@/lib/proxy/getRandomProxy";
 import { getStickyProxy, invalidateStickyProxy } from "@/lib/proxy/stickyProxyManager";
 
 export async function POST(req: NextRequest) {
@@ -24,13 +28,14 @@ export async function POST(req: NextRequest) {
   let proxyUrl = "";
   try {
     proxyUrl = isSticky
-      ? getStickyProxy(stickyKey, 600, () => getRandomProxy(country))
-      : getRandomProxy(country);
+      ? await getStickyProxy(stickyKey, 600, () => getRandomProxy(country))
+      : await getRandomProxy(country);
 
     const response = await undiciFetch(url, {
       dispatcher: new ProxyAgent(proxyUrl),
     });
     const body = await response.text();
+    await markProxyAsHealthy(proxyUrl);
 
     return NextResponse.json({
       success: true,
@@ -42,8 +47,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     if (proxyUrl) {
-      markProxyAsBad(proxyUrl);
-      invalidateStickyProxy(stickyKey, proxyUrl);
+      await markProxyAsBad(proxyUrl);
+      await invalidateStickyProxy(stickyKey, proxyUrl);
     }
     return NextResponse.json(
       {

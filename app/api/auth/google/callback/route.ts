@@ -3,6 +3,8 @@ import { NextResponse } from "next/server"
 import { connectDB } from "@/lib/db"
 import { User } from "@/lib/models/User"
 import { Session } from "@/lib/models/Session"
+import { getOrCreateDefaultWorkspace } from "@/lib/auth/rbac"
+import { trackEvent } from "@/lib/analytics/trackEvent"
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -59,6 +61,13 @@ export async function GET(req: Request) {
   const session = await Session.create({
     userId: user._id,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  })
+
+  await getOrCreateDefaultWorkspace(user._id.toString())
+  await trackEvent({
+    userId: user._id.toString(),
+    event: "signup_completed",
+    source: "auth.google",
   })
 
   ;(await cookies()).set("session", session._id.toString(), {
