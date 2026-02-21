@@ -5,16 +5,113 @@ import { User } from "@/lib/models/User";
 import { ApiKey } from "@/lib/models/ApiKey";
 import { plans } from "@/lib/billing/plans";
 import { verifyRazorpayWebhook } from "@/lib/billing/provider";
+import { grantPlanRequests } from "@/lib/billing/requestCredits";
 import { dispatchUserAlert } from "@/lib/alerts/dispatchAlert";
 import { trackEvent } from "@/lib/analytics/trackEvent";
 import { BillingWebhookEvent } from "@/lib/models/BillingWebhookEvent";
+import { Payment } from "@/lib/models/Payment";
 import crypto from "crypto";
+import mongoose from "mongoose";
 
 function getNotes(obj: any) {
   return {
     userId: obj?.notes?.userId || null,
     planId: obj?.notes?.planId || null,
   };
+}
+
+function toDateFromUnix(value: any) {
+  if (!value || typeof value !== "number") return null;
+  return new Date(value * 1000);
+}
+
+function toObjectIdOrNull(value: any) {
+  if (!value || typeof value !== "string") return null;
+  if (!mongoose.Types.ObjectId.isValid(value)) return null;
+  return new mongoose.Types.ObjectId(value);
+}
+
+function buildPaymentUpsert(event: any, eventId: string, eventType: string) {
+  const paymentEntity = event?.payload?.payment?.entity || null;
+  const paymentLinkEntity = event?.payload?.payment_link?.entity || null;
+  const subscriptionEntity = event?.payload?.subscription?.entity || null;
+  const invoiceEntity = event?.payload?.invoice?.entity || null;
+
+  const notesSource =
+    paymentEntity?.notes
+      ? paymentEntity
+      : paymentLinkEntity?.notes
+      ? paymentLinkEntity
+      : subscriptionEntity?.notes
+      ? subscriptionEntity
+      : invoiceEntity?.notes
+      ? invoiceEntity
+      : null;
+  const { userId, planId } = getNotes(notesSource);
+
+  const providerPaymentId = paymentEntity?.id || null;
+  const providerPaymentLinkId = paymentEntity?.payment_link_id || paymentLinkEntity?.id || null;
+  const providerSubscriptionId = paymentEntity?.subscription_id || subscriptionEntity?.id || null;
+  const providerInvoiceId = paymentEntity?.invoice_id || invoiceEntity?.id || null;
+  const providerOrderId = paymentEntity?.order_id || paymentLinkEntity?.order_id || null;
+
+  const filter = providerPaymentId
+    ? { provider: "razorpay", providerPaymentId }
+    : providerPaymentLinkId
+    ? { provider: "razorpay", providerPaymentLinkId }
+    : providerSubscriptionId
+    ? { provider: "razorpay", providerSubscriptionId }
+    : { provider: "razorpay", lastEventId: eventId };
+
+  const status =
+    paymentEntity?.status ||
+    (eventType === "payment_link.paid"
+      ? "paid"
+      : eventType === "payment.captured"
+      ? "captured"
+      : eventType === "payment.failed"
+      ? "failed"
+      : null);
+
+  const updateData: Record<string, any> = {
+    provider: "razorpay",
+    providerPaymentId,
+    providerOrderId,
+    providerPaymentLinkId,
+    providerSubscriptionId,
+    providerInvoiceId,
+    userId: toObjectIdOrNull(userId),
+    planId: planId || null,
+    amount: paymentEntity?.amount ?? paymentLinkEntity?.amount ?? invoiceEntity?.amount ?? null,
+    currency: paymentEntity?.currency || paymentLinkEntity?.currency || invoiceEntity?.currency || null,
+    status,
+    method: paymentEntity?.method || null,
+    email:
+      paymentEntity?.email ||
+      paymentLinkEntity?.customer?.email ||
+      null,
+    contact: paymentEntity?.contact || paymentLinkEntity?.customer?.contact || null,
+    failureCode: paymentEntity?.error_code || null,
+    failureReason: paymentEntity?.error_description || null,
+    lastEventId: eventId,
+    lastEventType: eventType,
+    notes: notesSource?.notes || null,
+    rawPayload: event?.payload || null,
+    paidAt:
+      eventType === "payment_link.paid" || eventType === "payment.captured"
+        ? toDateFromUnix(paymentEntity?.captured_at || paymentEntity?.created_at) || new Date()
+        : undefined,
+    failedAt:
+      eventType === "payment.failed"
+        ? toDateFromUnix(paymentEntity?.created_at) || new Date()
+        : undefined,
+  };
+
+  Object.keys(updateData).forEach((key) => {
+    if (updateData[key] === undefined) delete updateData[key];
+  });
+
+  return { filter, updateData };
 }
 
 export async function POST(req: NextRequest) {
@@ -39,6 +136,17 @@ export async function POST(req: NextRequest) {
 
   const { userId, planId } = getNotes(payloadObj);
   await connectDB();
+
+  if (eventType) {
+    const { filter, updateData } = buildPaymentUpsert(event, eventId, eventType);
+    await Payment.findOneAndUpdate(
+      filter,
+      {
+        $set: updateData,
+      },
+      { upsert: true, new: true }
+    );
+  }
 
   if (eventId) {
     const previous = await BillingWebhookEvent.findOneAndUpdate(
@@ -75,10 +183,10 @@ export async function POST(req: NextRequest) {
       renewsAt,
     });
 
-    await User.findByIdAndUpdate(userId, {
+    await grantPlanRequests({
+      userId,
       planId,
-      planExpiresAt: renewsAt,
-      trialRequestsRemaining: 0,
+      renewsAt,
     });
     await ApiKey.updateMany({ userId }, { planSnapshot: planId });
 
@@ -142,9 +250,10 @@ export async function POST(req: NextRequest) {
         },
         { upsert: true, new: true }
       );
-      await User.findByIdAndUpdate(userId, {
+      await grantPlanRequests({
+        userId,
         planId,
-        planExpiresAt: renewsAt,
+        renewsAt,
       });
       await ApiKey.updateMany({ userId }, { planSnapshot: planId });
     }

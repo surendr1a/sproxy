@@ -46,6 +46,7 @@ export async function GET(req: Request) {
       workspaceId,
       planId: user.planId,
       trialRequestsRemaining: user.trialRequestsRemaining || 0,
+      paidRequestsRemaining: user.paidRequestsRemaining,
     })
 
     return NextResponse.json({

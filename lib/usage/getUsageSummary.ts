@@ -6,11 +6,13 @@ export async function getUsageSummary({
   workspaceId,
   planId,
   trialRequestsRemaining,
+  paidRequestsRemaining,
 }: {
   userId: string;
   workspaceId?: string | null;
   planId?: string | null;
   trialRequestsRemaining: number;
+  paidRequestsRemaining?: number | null;
 }) {
   const monthPrefix = new Date().toISOString().slice(0, 7);
   const today = new Date().toISOString().slice(0, 10);
@@ -32,10 +34,13 @@ export async function getUsageSummary({
   const todayCount = todayLog?.requestCount || 0;
 
   const plan = planId ? plans.find((p) => p.id === planId) : null;
-  const limit = plan?.monthlyRequestLimit || 50;
-  const remaining = planId
-    ? Math.max(limit - thisMonth, 0)
-    : Math.max(trialRequestsRemaining, 0);
+  const legacyRemaining = Math.max((plan?.monthlyRequestLimit || 0) - thisMonth, 0);
+  const paidRemaining =
+    typeof paidRequestsRemaining === "number"
+      ? Math.max(paidRequestsRemaining, 0)
+      : legacyRemaining;
+  const limit = planId ? thisMonth + paidRemaining : 50;
+  const remaining = planId ? paidRemaining : Math.max(trialRequestsRemaining, 0);
 
   return {
     usage: {

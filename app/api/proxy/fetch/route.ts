@@ -22,12 +22,35 @@ import {
 } from "@/lib/guards/requestGuards";
 import { dispatchUserAlert } from "@/lib/alerts/dispatchAlert";
 import { trackEvent } from "@/lib/analytics/trackEvent";
+import { computeCarryoverPaidRequests } from "@/lib/billing/requestCredits";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
 const STRICT_PROXY_MODE =
   process.env.PROXY_STRICT_MODE === "true" ||
   process.env.NODE_ENV === "production";
+const PAID_PLANS = new Set(["starter", "pro", "business", "enterprise"]);
+
+function isPaidPlan(plan: string) {
+  return PAID_PLANS.has(plan);
+}
+
+async function consumeRequestBalance(userId: string | undefined, plan: string) {
+  if (!userId) return;
+  if (plan === "free") {
+    await User.updateOne(
+      { _id: userId, trialRequestsRemaining: { $gt: 0 } },
+      { $inc: { trialRequestsRemaining: -1 } }
+    );
+    return;
+  }
+  if (isPaidPlan(plan)) {
+    await User.updateOne(
+      { _id: userId, paidRequestsRemaining: { $gt: 0 } },
+      { $inc: { paidRequestsRemaining: -1 } }
+    );
+  }
+}
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -69,6 +92,28 @@ export async function POST(req: NextRequest) {
       },
       { status: 429 }
     );
+  }
+
+  if (auth.userId && isPaidPlan(auth.plan)) {
+    await connectDB();
+    const user = await User.findById(auth.userId).select("paidRequestsRemaining");
+    let paidRequestsRemaining = user?.paidRequestsRemaining;
+    if (typeof paidRequestsRemaining !== "number") {
+      paidRequestsRemaining = await computeCarryoverPaidRequests(auth.userId);
+      await User.updateOne(
+        { _id: auth.userId },
+        { $set: { paidRequestsRemaining } }
+      );
+    }
+    if (paidRequestsRemaining <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Plan request quota exhausted. Please recharge or upgrade.",
+        },
+        { status: 429 }
+      );
+    }
   }
 
   /* ---------------- VALIDATION ---------------- */
@@ -165,12 +210,7 @@ export async function POST(req: NextRequest) {
           success: true,
         }),
       ]);
-      if (auth.userId && auth.plan === "free") {
-        await User.updateOne(
-          { _id: auth.userId, trialRequestsRemaining: { $gt: 0 } },
-          { $inc: { trialRequestsRemaining: -1 } }
-        );
-      }
+      await consumeRequestBalance(auth.userId, auth.plan);
       await trackEvent({
         userId: auth.userId,
         event: "proxy_request_success",
@@ -246,12 +286,7 @@ export async function POST(req: NextRequest) {
         success: false,
       }),
     ]);
-    if (auth.userId && auth.plan === "free") {
-      await User.updateOne(
-        { _id: auth.userId, trialRequestsRemaining: { $gt: 0 } },
-        { $inc: { trialRequestsRemaining: -1 } }
-      );
-    }
+    await consumeRequestBalance(auth.userId, auth.plan);
     await dispatchUserAlert({
       userId: auth.userId,
       event: "proxy.all_failed",
@@ -314,12 +349,7 @@ export async function POST(req: NextRequest) {
         success: true,
       }),
     ]);
-    if (auth.userId && auth.plan === "free") {
-      await User.updateOne(
-        { _id: auth.userId, trialRequestsRemaining: { $gt: 0 } },
-        { $inc: { trialRequestsRemaining: -1 } }
-      );
-    }
+    await consumeRequestBalance(auth.userId, auth.plan);
     await dispatchUserAlert({
       userId: auth.userId,
       event: "proxy.direct_fallback",
@@ -363,12 +393,7 @@ export async function POST(req: NextRequest) {
       success: false,
     }),
   ]);
-  if (auth.userId && auth.plan === "free") {
-    await User.updateOne(
-      { _id: auth.userId, trialRequestsRemaining: { $gt: 0 } },
-      { $inc: { trialRequestsRemaining: -1 } }
-    );
-  }
+  await consumeRequestBalance(auth.userId, auth.plan);
 
   return NextResponse.json(
     {

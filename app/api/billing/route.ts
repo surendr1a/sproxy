@@ -7,6 +7,7 @@ import { ApiKey } from "@/lib/models/ApiKey"
 import { plans } from "@/lib/billing/plans"
 import { getAuthUser } from "@/lib/auth/getAuthUser"
 import { createCheckoutSession } from "@/lib/billing/provider"
+import { grantPlanRequests } from "@/lib/billing/requestCredits"
 import { trackEvent } from "@/lib/analytics/trackEvent"
 
 /**
@@ -129,10 +130,10 @@ export async function POST(req: NextRequest) {
     })
 
     // 4️⃣ Update user plan snapshot
-    await User.findByIdAndUpdate(authUser.id, {
+    await grantPlanRequests({
+      userId: authUser.id,
       planId,
-      planExpiresAt: renewsAt,
-      trialRequestsRemaining: 0, // ⛔ trial ends after paid
+      renewsAt,
     })
     await ApiKey.updateMany({ userId: authUser.id }, { planSnapshot: planId })
 

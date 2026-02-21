@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db"
 import { Session } from "@/lib/models/Session"
 import { User } from "@/lib/models/User"
 import mongoose from "mongoose"
+import { computeCarryoverPaidRequests } from "@/lib/billing/requestCredits"
 
 export async function getAuthUser() {
   try {
@@ -27,21 +28,31 @@ export async function getAuthUser() {
 
     // 3️⃣ Load user
     const user = await User.findById(session.userId).select(
-      "_id email role status trialRequestsRemaining planId planExpiresAt createdAt"
+      "_id email role status trialRequestsRemaining paidRequestsRemaining planId planExpiresAt createdAt"
     )
 
     if (!user || user.status !== "active") return null
 
-    // 4️⃣ Update last active (optional but good)
-    await User.findByIdAndUpdate(user._id, {
-      lastActiveAt: new Date(),
-    })
+    // 4️⃣ Keep activity fresh + repair paid request balance if older records missed carryover.
+    const updates: Record<string, unknown> = { lastActiveAt: new Date() }
+    if (user.planId) {
+      const inferredPaidRemaining = await computeCarryoverPaidRequests(user._id.toString())
+      if (
+        typeof user.paidRequestsRemaining !== "number" ||
+        inferredPaidRemaining > user.paidRequestsRemaining
+      ) {
+        updates.paidRequestsRemaining = inferredPaidRemaining
+        user.paidRequestsRemaining = inferredPaidRemaining as any
+      }
+    }
+    await User.findByIdAndUpdate(user._id, updates)
 
     return {
       id: user._id.toString(),
       email: user.email,
       role: user.role,
       trialRequestsRemaining: user.trialRequestsRemaining,
+      paidRequestsRemaining: user.paidRequestsRemaining,
       planId: user.planId,
       planExpiresAt: user.planExpiresAt,
       createdAt: user.createdAt,

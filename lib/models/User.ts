@@ -9,6 +9,7 @@ const UserSchema = new Schema(
     status: { type: String, default: "active" }, // active | blocked
 
     trialRequestsRemaining: { type: Number, default: 50 },
+    paidRequestsRemaining: { type: Number, default: null },
 
     planId: { type: String, default: null },
     planExpiresAt: { type: Date, default: null },

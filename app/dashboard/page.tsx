@@ -29,6 +29,21 @@ interface DashboardData {
     name: string
     monthlyRequestLimit: number
   } | null
+  requestCredits: {
+    totalRemaining: number
+    currentPlanRemaining: number
+    previousCarryoverRemaining: number
+  }
+  subscriptions: Array<{
+    id: string
+    planId: string
+    status: "active" | "canceled" | "expired"
+    provider: string
+    renewsAt: string | null
+    startedAt: string | null
+    canceledAt: string | null
+    createdAt: string | null
+  }>
 }
 
 interface ApiKey {
@@ -230,6 +245,89 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Request Credits */}
+      {data.user.planId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Total Requests Left</CardTitle>
+            <CardDescription>Current plan + previous plan carryover</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Total Remaining</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {data.requestCredits.totalRemaining.toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Current Plan Remaining</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {data.requestCredits.currentPlanRemaining.toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Previous Plans Carryover</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {data.requestCredits.previousCarryoverRemaining.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Subscription History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">All Subscriptions</CardTitle>
+          <CardDescription>Every subscription purchased on this account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.subscriptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No subscriptions yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {data.subscriptions.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {sub.planId.toUpperCase()} <span className="text-muted-foreground">({sub.provider})</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Started: {sub.startedAt ? new Date(sub.startedAt).toLocaleDateString() : "-"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge
+                      variant={
+                        sub.status === "active"
+                          ? "default"
+                          : sub.status === "canceled"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      {sub.status}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">
+                      {sub.renewsAt
+                        ? `Renews: ${new Date(sub.renewsAt).toLocaleDateString()}`
+                        : sub.canceledAt
+                        ? `Canceled: ${new Date(sub.canceledAt).toLocaleDateString()}`
+                        : "-"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Quick Links */}
       <div className="grid gap-4 md:grid-cols-2">
