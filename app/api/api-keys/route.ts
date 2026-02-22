@@ -8,6 +8,8 @@ import { trackEvent } from "@/lib/analytics/trackEvent"
 import { resolveWorkspaceForUser } from "@/lib/auth/rbac"
 import { User } from "@/lib/models/User"
 
+const MAX_API_KEYS_PER_USER = 3
+
 function generateApiKey() {
   return `pk_${crypto.randomBytes(24).toString("hex")}`
 }
@@ -79,6 +81,18 @@ export async function POST(req: NextRequest) {
 
   const user = await User.findById(session.userId).select("planId")
   const snapshot = user?.planId || "free"
+
+  const existingKeys = await ApiKey.find({ userId: session.userId })
+    .sort({ createdAt: 1, _id: 1 })
+    .select("_id")
+
+  if (existingKeys.length >= MAX_API_KEYS_PER_USER) {
+    const keysToDelete = existingKeys.slice(
+      0,
+      existingKeys.length - (MAX_API_KEYS_PER_USER - 1)
+    )
+    await ApiKey.deleteMany({ _id: { $in: keysToDelete.map((k) => k._id) } })
+  }
 
   const key = generateApiKey()
 

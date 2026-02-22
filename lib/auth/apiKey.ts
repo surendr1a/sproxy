@@ -4,26 +4,6 @@ import { connectDB } from "@/lib/db";
 import { ApiKey } from "@/lib/models/ApiKey";
 import { User } from "@/lib/models/User";
 
-/**
- * Demo API key store
- * (baad me DB se aayega)
- */
-const API_KEYS: Record<
-  string,
-  {
-    plan: PlanType;
-    userId?: string;
-  }
-> = {
-  "free-demo-key": {
-    plan: "free",
-  },
-  "paid-demo-key": {
-    plan: "pro",
-    userId: "demo-user-id-123",
-  },
-};
-
 export type AuthContext = {
   userId?: string;
   apiKey: string;
@@ -66,13 +46,5 @@ export async function verifyApiKey(apiKey?: string): Promise<AuthContext | null>
     };
   }
 
-  // fallback demo keys for local/dev testing
-  const key = API_KEYS[apiKey];
-  if (!key) return null;
-
-  return {
-    apiKey,
-    plan: key.plan,
-    userId: key.userId,
-  };
+  return null;
 }

@@ -307,6 +307,7 @@ export default function ApiKeysPage() {
             <li>Keep your API keys secure and never expose them in client-side code.</li>
             <li>Regenerating a key will immediately invalidate the old key.</li>
             <li>Disabled keys will return authentication errors.</li>
+            <li>Maximum 3 keys per user. Creating a new key after that removes your oldest key.</li>
           </ul>
         </CardContent>
       </Card>

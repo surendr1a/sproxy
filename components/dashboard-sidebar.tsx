@@ -18,11 +18,12 @@ import {
   BellRing,
   Users,
   Activity,
+  MessageSquareHeart,
 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ConfirmModal } from "./ui/confirm-modal"
 
-const navItems = [
+const baseNavItems = [
   // ---- MAIN ----
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
 
@@ -39,6 +40,13 @@ const navItems = [
   { href: "/dashboard/alerts", label: "Alerts", icon: BellRing },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/status", label: "Status", icon: Activity },
+]
+
+const paidOnlyNavItems = [
+  { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareHeart },
+]
+
+const footerNavItems = [
   { href: "/dashboard/how-to-use", label: "How to Use", icon: BookOpen },
   { href: "/dashboard/support", label: "Support", icon: HelpCircle },
 ]
@@ -47,6 +55,18 @@ export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [isPaidUser, setIsPaidUser] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        setIsPaidUser(Boolean(data?.user?.planId))
+      })
+      .catch(() => {
+        setIsPaidUser(false)
+      })
+  }, [])
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
@@ -63,7 +83,7 @@ export function DashboardSidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 p-4">
-        {navItems.map((item) => {
+        {[...baseNavItems, ...(isPaidUser ? paidOnlyNavItems : []), ...footerNavItems].map((item) => {
           const isActive = pathname === item.href
           return (
             <Link
