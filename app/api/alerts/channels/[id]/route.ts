@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/getAuthUser";
 import { AlertChannel } from "@/lib/models/AlertChannel";
+import { isValidWebhookUrl, sanitizeAlertEvents } from "@/lib/alerts/config";
 
 export async function PATCH(
   req: NextRequest,
@@ -21,10 +22,31 @@ export async function PATCH(
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   }
 
-  if (body.status) channel.status = body.status;
-  if (body.subscribedEvents) channel.subscribedEvents = body.subscribedEvents;
-  if (body.secret !== undefined) channel.secret = body.secret || null;
-  if (body.name) channel.name = body.name;
+  if (body.status) {
+    if (!["active", "disabled"].includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    channel.status = body.status;
+  }
+  if (body.subscribedEvents !== undefined) {
+    const events = sanitizeAlertEvents(body.subscribedEvents);
+    if (!events.length) {
+      return NextResponse.json({ error: "At least one valid event is required" }, { status: 400 });
+    }
+    channel.subscribedEvents = events;
+  }
+  if (body.secret !== undefined) {
+    channel.secret =
+      typeof body.secret === "string" && body.secret.trim() ? body.secret.trim() : null;
+  }
+  if (body.name) channel.name = String(body.name).trim();
+  if (body.webhookUrl !== undefined) {
+    const valid = isValidWebhookUrl(body.webhookUrl);
+    if (!valid.ok) {
+      return NextResponse.json({ error: valid.error }, { status: 400 });
+    }
+    channel.webhookUrl = valid.url;
+  }
   await channel.save();
 
   return NextResponse.json({ success: true });

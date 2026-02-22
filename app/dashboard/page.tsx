@@ -1,370 +1,529 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import Link from "next/link"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Copy, Check, AlertTriangle, ArrowRight, Key, BarChart3 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Check,
+  CheckCircle2,
+  Copy,
+  CreditCard,
+  Gauge,
+  Globe,
+  Key,
+  LifeBuoy,
+  Loader2,
+  Shield,
+  Zap,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { notifyError, notifySuccess } from "@/lib/toast";
 
-interface DashboardData {
+type DashboardData = {
   user: {
-    email: string
-    planId: string | null
-    trialRequestsRemaining: number
-    planExpiresAt: string | null
-    createdAt: string
-  }
+    email: string;
+    planId: string | null;
+    trialRequestsRemaining: number;
+    planExpiresAt: string | null;
+    createdAt: string;
+  };
   usage: {
-    today: number
-    thisMonth: number
-    failed: number
-    remaining: number
-    limit: number
-    percentUsed: number
-  }
+    today: number;
+    thisMonth: number;
+    failed: number;
+    remaining: number;
+    limit: number;
+    percentUsed: number;
+  };
   currentPlan: {
-    name: string
-    monthlyRequestLimit: number
-  } | null
+    name: string;
+    monthlyRequestLimit: number;
+  } | null;
   requestCredits: {
-    totalRemaining: number
-    currentPlanRemaining: number
-    previousCarryoverRemaining: number
-  }
-  subscriptions: Array<{
-    id: string
-    planId: string
-    status: "active" | "canceled" | "expired"
-    provider: string
-    renewsAt: string | null
-    startedAt: string | null
-    canceledAt: string | null
-    createdAt: string | null
-  }>
-}
+    totalRemaining: number;
+    currentPlanRemaining: number;
+    previousCarryoverRemaining: number;
+  };
+};
 
-interface ApiKey {
-  id: string
-  maskedKey: string
-  key: string
-  status: string
+type ApiKey = {
+  id: string;
+  maskedKey: string;
+  key: string;
+  status: "active" | "disabled";
+  createdAt?: string;
+  lastUsedAt?: string;
+};
+
+type ProxyStatusData = {
+  strictProxyMode: boolean;
+  provider: string;
+  health: {
+    total: number;
+    healthyCount: number;
+    badCount: number;
+  };
+};
+
+function formatPlanName(planId: string | null, currentPlanName?: string | null) {
+  if (currentPlanName) return currentPlanName;
+  if (!planId) return "Free Trial";
+  return planId.charAt(0).toUpperCase() + planId.slice(1);
 }
 
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null)
-  const [apiKey, setApiKey] = useState<ApiKey | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [apiKey, setApiKey] = useState<ApiKey | null>(null);
+  const [proxyStatus, setProxyStatus] = useState<ProxyStatusData | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [keyBusy, setKeyBusy] = useState(false);
+
+  const loadDashboard = async () => {
+    setLoading(true);
+    try {
+      const [meRes, keysRes, statusRes] = await Promise.all([
+        fetch("/api/auth/me", { cache: "no-store" }),
+        fetch("/api/api-keys", { cache: "no-store" }),
+        fetch("/api/proxy/status", { cache: "no-store" }),
+      ]);
+
+      const [meData, keysData, statusData] = await Promise.all([
+        meRes.json().catch(() => null),
+        keysRes.json().catch(() => null),
+        statusRes.json().catch(() => null),
+      ]);
+
+      if (!meRes.ok || !meData?.user) {
+        throw new Error(meData?.error || "Failed to load dashboard");
+      }
+
+      setData(meData);
+      const activeKey = (keysData?.apiKeys || []).find((k: ApiKey) => k.status === "active" && k.key);
+      setApiKey(activeKey || null);
+      if (statusRes.ok && statusData?.health) {
+        setProxyStatus(statusData);
+      } else {
+        setProxyStatus(null);
+      }
+    } catch (err: any) {
+      notifyError("Dashboard load failed", err?.message || "Please refresh and try again.");
+      setData(null);
+      setApiKey(null);
+      setProxyStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/auth/me").then((res) => res.json()),
-      fetch("/api/api-keys").then((res) => res.json()),
-    ])
-      .then(([userData, keysData]) => {
-        if (userData.user) {
-          setData(userData)
-        }
-        if (keysData.apiKeys?.[0]) {
-          setApiKey(keysData.apiKeys[0])
-        }
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
-  }, [])
+    loadDashboard();
+  }, []);
 
   const copyApiKey = async () => {
-    if (apiKey?.key) {
-      await navigator.clipboard.writeText(apiKey.key)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+    if (!apiKey?.key) return;
+    await navigator.clipboard.writeText(apiKey.key);
+    setCopied(true);
+    notifySuccess("Copied", "API key copied to clipboard.");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const createApiKey = async () => {
+    setKeyBusy(true);
+    try {
+      const res = await fetch("/api/api-keys", { method: "POST" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "Failed to create API key");
+      if (!payload.apiKey?.key) throw new Error("Missing API key in response");
+      setApiKey(payload.apiKey);
+      notifySuccess("API key created", "New active key generated for your requests.");
+    } catch (err: any) {
+      notifyError("API key creation failed", err?.message || "Please try again.");
+    } finally {
+      setKeyBusy(false);
     }
-  }
+  };
+
+  const computed = useMemo(() => {
+    if (!data) return null;
+
+    const isTrial = !data.user.planId;
+    const isTrialExpired = isTrial && data.user.trialRequestsRemaining <= 0;
+    const remaining = data.usage.remaining;
+    const limit = data.usage.limit;
+    const lowThreshold = Math.max(10, Math.floor(limit * 0.1));
+    const isNearLimit = remaining > 0 && remaining <= lowThreshold;
+    const failRate = data.usage.thisMonth > 0
+      ? Math.round((data.usage.failed / data.usage.thisMonth) * 100)
+      : 0;
+
+    const health = proxyStatus?.health;
+    const healthPercent = health?.total
+      ? Math.round((health.healthyCount / health.total) * 100)
+      : 0;
+
+    return {
+      isTrial,
+      isTrialExpired,
+      isNearLimit,
+      failRate,
+      healthPercent,
+      planName: formatPlanName(data.user.planId, data.currentPlan?.name || null),
+      usagePercent: data.usage.percentUsed,
+      accountAgeDays: Math.max(
+        0,
+        Math.floor((Date.now() - new Date(data.user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+      ),
+    };
+  }, [data, proxyStatus]);
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Skeleton className="h-40" />
-          <Skeleton className="h-40" />
-          <Skeleton className="h-40" />
+        <Skeleton className="h-10 w-60" />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
         </div>
+        <Skeleton className="h-72" />
       </div>
-    )
+    );
   }
 
-  if (!data) {
+  if (!data || !computed) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <p className="text-muted-foreground">Failed to load dashboard data.</p>
+      <div className="flex min-h-[260px] items-center justify-center">
+        <p className="text-muted-foreground">Unable to load dashboard right now.</p>
       </div>
-    )
+    );
   }
 
-  const isTrialExpired = !data.user.planId && data.user.trialRequestsRemaining <= 0
-  const isNearLimit = data.usage.remaining > 0 && data.usage.remaining <= Math.max(10, Math.floor(data.usage.limit * 0.1))
+  const onboardingSteps = [
+    {
+      label: "Active API key",
+      done: !!apiKey?.key,
+      href: "/dashboard/api-keys",
+      cta: apiKey?.key ? "Manage" : "Create",
+    },
+    {
+      label: "Proxy connectivity check",
+      done: !!proxyStatus && (proxyStatus.health?.total || 0) > 0,
+      href: "/dashboard/ip-check",
+      cta: "Run check",
+    },
+    {
+      label: "First live request",
+      done: data.usage.thisMonth > 0,
+      href: "/dashboard/proxy",
+      cta: "Open proxy",
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome back to ProxyAPI</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            One-screen control center for plan, request balance, proxy health, and next actions.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={computed.isTrial ? "secondary" : "default"}>
+            {computed.planName}
+          </Badge>
+          <Button variant="outline" onClick={loadDashboard}>
+            <Loader2 className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      {/* Trial Expired Warning */}
-      {isTrialExpired && (
+      {computed.isTrialExpired && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Trial Expired</AlertTitle>
-          <AlertDescription className="flex items-center justify-between">
-            <span>Your free trial has ended. Upgrade to continue using the API.</span>
-            <Link href="/dashboard/billing">
-              <Button size="sm" variant="outline" className="ml-4 bg-transparent">
-                Upgrade Now
-              </Button>
-            </Link>
+          <AlertTitle>Trial expired</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            Your free requests are finished. Upgrade to continue sending proxy requests.
+            <Button size="sm" asChild>
+              <Link href="/dashboard/billing">Upgrade plan</Link>
+            </Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {/* Near Limit Warning */}
-      {isNearLimit && !isTrialExpired && (
+      {!computed.isTrialExpired && computed.isNearLimit && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Approaching Limit</AlertTitle>
-          <AlertDescription>
-            {/* You have {data.usage.remaining} requests remaining. Consider upgrading your plan. */}
-            You have requests remaining. Consider upgrading your plan.
+          <AlertTitle>Low request balance</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            You are running low on available requests. Top-up by upgrading your plan.
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/dashboard/billing">Open billing</Link>
+            </Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {/* Main Cards */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {/* API Key Card */}
+      {(proxyStatus?.health?.badCount ?? 0) > 0 && (
+        <Alert>
+          <Shield className="h-4 w-4" />
+          <AlertTitle>Proxy health warning</AlertTitle>
+          <AlertDescription>
+            {proxyStatus?.health?.badCount ?? 0} proxies are currently unhealthy. Check IP/Sticky tester before running critical workloads.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Key className="h-4 w-4" />
-              API Key
-            </CardTitle>
-            <CardDescription>Your primary API key</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 rounded bg-muted px-3 py-2 font-mono text-sm">
-                {apiKey?.maskedKey || "No key found"}
-              </code>
-              <Button size="icon" variant="outline" onClick={copyApiKey} disabled={!apiKey}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </div>
-            <Link href="/dashboard/api-keys" className="mt-4 inline-block">
-              <Button variant="link" className="h-auto p-0 text-sm">
-                Manage keys
-                <ArrowRight className="ml-1 h-3 w-3" />
-              </Button>
-            </Link>
+          <CardContent className="pt-6">
+            <p className="text-xs text-muted-foreground">Total Requests Left</p>
+            <p className="mt-1 text-2xl font-semibold">{data.requestCredits.totalRemaining.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">Current + carryover combined</p>
           </CardContent>
         </Card>
-
-        {/* Usage Summary Card */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <BarChart3 className="h-4 w-4" />
-              Usage Summary
-            </CardTitle>
-            <CardDescription>Your request statistics</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Today</span>
-                <span className="font-medium">{data.usage.today} requests</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">This month</span>
-                <span className="font-medium">{data.usage.thisMonth} requests</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Failed</span>
-                <span className="font-medium text-destructive">{data.usage.failed}</span>
-              </div>
-            </div>
-            <Link href="/dashboard/usage" className="mt-4 inline-block">
-              <Button variant="link" className="h-auto p-0 text-sm">
-                View details
-                <ArrowRight className="ml-1 h-3 w-3" />
-              </Button>
-            </Link>
+          <CardContent className="pt-6">
+            <p className="text-xs text-muted-foreground">This Month Usage</p>
+            <p className="mt-1 text-2xl font-semibold">{data.usage.thisMonth.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">Today: {data.usage.today.toLocaleString()}</p>
           </CardContent>
         </Card>
-
-        {/* Plan Info Card */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Current Plan</CardTitle>
-            <CardDescription>Your subscription details</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Plan</span>
-                <Badge variant={data.user.planId ? "default" : "secondary"}>
-                  {data.currentPlan?.name || "Free Trial"}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Remaining</span>
-                <span className="font-medium">
-                  {data.user.planId
-                    ? `${data.usage.remaining} / ${data.currentPlan?.monthlyRequestLimit}`
-                    : `${data.user.trialRequestsRemaining} / 50`}
-                </span>
-              </div>
-              {data.user.planExpiresAt && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Renews</span>
-                  <span className="text-sm">
-                    {new Date(data.user.planExpiresAt).toLocaleDateString()}
-                  </span>
-                </div>
-              )}
-            </div>
-            <Link href="/dashboard/billing" className="mt-4 inline-block">
-              <Button variant="link" className="h-auto p-0 text-sm">
-                {data.user.planId ? "Manage plan" : "Upgrade"}
-                <ArrowRight className="ml-1 h-3 w-3" />
-              </Button>
-            </Link>
+          <CardContent className="pt-6">
+            <p className="text-xs text-muted-foreground">Failed Requests</p>
+            <p className="mt-1 text-2xl font-semibold text-rose-600">{data.usage.failed.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">Fail rate: {computed.failRate}%</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-xs text-muted-foreground">Proxy Network Health</p>
+            <p className="mt-1 text-2xl font-semibold">{computed.healthPercent}%</p>
+            <p className="text-xs text-muted-foreground">
+              {proxyStatus?.health?.healthyCount ?? 0}/{proxyStatus?.health?.total ?? 0} healthy
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Request Credits */}
-      {data.user.planId && (
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Total Requests Left</CardTitle>
-            <CardDescription>Current plan + previous plan carryover</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Gauge className="h-5 w-5" />
+              Usage & Capacity Overview
+            </CardTitle>
+            <CardDescription>
+              Understand how much of your monthly capacity is consumed and how much carryover is still available.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-3">
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span>Monthly usage</span>
+                <span>{computed.usagePercent}% used</span>
+              </div>
+              <Progress value={computed.usagePercent} />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{data.usage.thisMonth.toLocaleString()} used</span>
+                <span>{data.usage.limit.toLocaleString()} effective limit</span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">Total Remaining</p>
-                <p className="mt-1 text-xl font-semibold">
-                  {data.requestCredits.totalRemaining.toLocaleString()}
-                </p>
+                <p className="text-xs text-muted-foreground">Current Plan Balance</p>
+                <p className="mt-1 text-lg font-semibold">{data.requestCredits.currentPlanRemaining.toLocaleString()}</p>
               </div>
               <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">Current Plan Remaining</p>
-                <p className="mt-1 text-xl font-semibold">
-                  {data.requestCredits.currentPlanRemaining.toLocaleString()}
-                </p>
+                <p className="text-xs text-muted-foreground">Carryover Balance</p>
+                <p className="mt-1 text-lg font-semibold">{data.requestCredits.previousCarryoverRemaining.toLocaleString()}</p>
               </div>
               <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">Previous Plans Carryover</p>
-                <p className="mt-1 text-xl font-semibold">
-                  {data.requestCredits.previousCarryoverRemaining.toLocaleString()}
-                </p>
+                <p className="text-xs text-muted-foreground">Account Age</p>
+                <p className="mt-1 text-lg font-semibold">{computed.accountAgeDays} days</p>
               </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button asChild>
+                <Link href="/dashboard/usage">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Open full usage analytics
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/dashboard/billing">
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Manage billing
+                </Link>
+              </Button>
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {/* Subscription History */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">All Subscriptions</CardTitle>
-          <CardDescription>Every subscription purchased on this account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {data.subscriptions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No subscriptions yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {data.subscriptions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {sub.planId.toUpperCase()} <span className="text-muted-foreground">({sub.provider})</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Started: {sub.startedAt ? new Date(sub.startedAt).toLocaleDateString() : "-"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge
-                      variant={
-                        sub.status === "active"
-                          ? "default"
-                          : sub.status === "canceled"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                    >
-                      {sub.status}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground">
-                      {sub.renewsAt
-                        ? `Renews: ${new Date(sub.renewsAt).toLocaleDateString()}`
-                        : sub.canceledAt
-                        ? `Canceled: ${new Date(sub.canceledAt).toLocaleDateString()}`
-                        : "-"}
-                    </p>
-                  </div>
-                </div>
-              ))}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Key className="h-4 w-4" /> API Access
+            </CardTitle>
+            <CardDescription>
+              Primary key used for all authenticated proxy requests.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs break-all">
+              {apiKey?.maskedKey || "No active key"}
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={copyApiKey} disabled={!apiKey?.key}>
+                {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                Copy key
+              </Button>
+              <Button size="sm" onClick={createApiKey} disabled={keyBusy}>
+                {keyBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+                New key
+              </Button>
+            </div>
+            <Button variant="link" className="h-auto p-0" asChild>
+              <Link href="/dashboard/api-keys">
+                Manage all keys <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Quick Links */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="cursor-pointer transition-colors hover:bg-muted/50">
-          <Link href="/dashboard/how-to-use">
-            <CardContent className="flex items-center gap-4 py-6">
-              <div className="rounded-lg bg-primary/10 p-3">
-                <Key className="h-6 w-6" />
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Start Checklist</CardTitle>
+            <CardDescription>
+              Follow these steps to avoid confusion and go live fast.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {onboardingSteps.map((step) => (
+              <div key={step.label} className="flex items-center justify-between rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  {step.done ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  )}
+                  <p className="text-sm font-medium">{step.label}</p>
+                </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={step.href}>{step.cta}</Link>
+                </Button>
               </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Platform Health Snapshot</CardTitle>
+            <CardDescription>
+              Keep an eye on routing mode and proxy pool status before heavy jobs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <span className="text-muted-foreground">Provider</span>
+              <span className="font-medium capitalize">{proxyStatus?.provider || "Unknown"}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <span className="text-muted-foreground">Strict mode</span>
+              <Badge variant={proxyStatus?.strictProxyMode ? "default" : "secondary"}>
+                {proxyStatus?.strictProxyMode ? "Enabled" : "Disabled"}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <span className="text-muted-foreground">Healthy / Total</span>
+              <span className="font-medium">
+                {proxyStatus?.health?.healthyCount ?? 0} / {proxyStatus?.health?.total ?? 0}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button variant="outline" asChild>
+                <Link href="/dashboard/status">
+                  <Shield className="mr-2 h-4 w-4" />
+                  Open status page
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/dashboard/ip-check">
+                  <Globe className="mr-2 h-4 w-4" />
+                  Run IP check
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="transition-colors hover:bg-muted/40">
+          <Link href="/dashboard/proxy">
+            <CardContent className="flex items-center gap-3 py-5">
+              <div className="rounded-md bg-primary/10 p-2"><Activity className="h-5 w-5" /></div>
               <div>
-                <h3 className="font-medium">How to Use</h3>
-                <p className="text-sm text-muted-foreground">
-                  Learn how to integrate the API
-                </p>
+                <p className="font-medium">Proxy Gateway</p>
+                <p className="text-xs text-muted-foreground">Send live requests</p>
               </div>
-              <ArrowRight className="ml-auto h-5 w-5 text-muted-foreground" />
             </CardContent>
           </Link>
         </Card>
 
-        <Card className="cursor-pointer transition-colors hover:bg-muted/50">
-          <Link href="/dashboard/support">
-            <CardContent className="flex items-center gap-4 py-6">
-              <div className="rounded-lg bg-primary/10 p-3">
-                <BarChart3 className="h-6 w-6" />
-              </div>
+        <Card className="transition-colors hover:bg-muted/40">
+          <Link href="/dashboard/proxy/sticky">
+            <CardContent className="flex items-center gap-3 py-5">
+              <div className="rounded-md bg-primary/10 p-2"><Gauge className="h-5 w-5" /></div>
               <div>
-                <h3 className="font-medium">Need Help?</h3>
-                <p className="text-sm text-muted-foreground">
-                  Check FAQs or contact support
-                </p>
+                <p className="font-medium">Sticky Tester</p>
+                <p className="text-xs text-muted-foreground">Verify session consistency</p>
               </div>
-              <ArrowRight className="ml-auto h-5 w-5 text-muted-foreground" />
+            </CardContent>
+          </Link>
+        </Card>
+
+        <Card className="transition-colors hover:bg-muted/40">
+          <Link href="/dashboard/proxy/batch">
+            <CardContent className="flex items-center gap-3 py-5">
+              <div className="rounded-md bg-primary/10 p-2"><Shield className="h-5 w-5" /></div>
+              <div>
+                <p className="font-medium">Batch Manager</p>
+                <p className="text-xs text-muted-foreground">Organize campaigns</p>
+              </div>
+            </CardContent>
+          </Link>
+        </Card>
+
+        <Card className="transition-colors hover:bg-muted/40">
+          <Link href="/dashboard/how-to-use">
+            <CardContent className="flex items-center gap-3 py-5">
+              <div className="rounded-md bg-primary/10 p-2"><LifeBuoy className="h-5 w-5" /></div>
+              <div>
+                <p className="font-medium">How To Use</p>
+                <p className="text-xs text-muted-foreground">Step by step guidance</p>
+              </div>
             </CardContent>
           </Link>
         </Card>
       </div>
     </div>
-  )
+  );
 }

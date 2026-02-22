@@ -37,11 +37,26 @@ interface BillingData {
   plans: Plan[]
   currentPlan: Plan | null
   subscription: {
+    planId: string
     status: string
     renewsAt: string
+    provider?: string | null
+    startedAt?: string | null
   } | null
+  subscriptions: Array<{
+    id: string
+    planId: string
+    status: "active" | "canceled" | "expired"
+    provider: string
+    renewsAt: string | null
+    startedAt: string | null
+    canceledAt: string | null
+    createdAt: string | null
+  }>
   isOnTrial: boolean
   trialRequestsRemaining: number
+  totalSubscriptions: number
+  paidRequestsRemaining: number | null
 }
 
 /* ---------------- FALLBACK DATA ---------------- */
@@ -72,8 +87,11 @@ const FALLBACK_DATA: BillingData = {
   ],
   currentPlan: null,
   subscription: null,
+  subscriptions: [],
   isOnTrial: true,
   trialRequestsRemaining: 25,
+  totalSubscriptions: 0,
+  paidRequestsRemaining: null,
 }
 
 /* ---------------- PAGE ---------------- */
@@ -97,9 +115,17 @@ export default function BillingPage() {
             : FALLBACK_DATA.plans,
           currentPlan: billingData?.currentPlan ?? null,
           subscription: billingData?.subscription ?? null,
+          subscriptions: Array.isArray(billingData?.subscriptions)
+            ? billingData.subscriptions
+            : [],
           isOnTrial: billingData?.isOnTrial ?? true,
           trialRequestsRemaining:
             billingData?.trialRequestsRemaining ?? 0,
+          totalSubscriptions: billingData?.totalSubscriptions ?? 0,
+          paidRequestsRemaining:
+            typeof billingData?.paidRequestsRemaining === "number"
+              ? billingData.paidRequestsRemaining
+              : null,
         })
       })
       .catch(() => {
@@ -146,9 +172,20 @@ export default function BillingPage() {
           : prev.plans,
         currentPlan: refreshedData?.currentPlan ?? null,
         subscription: refreshedData?.subscription ?? null,
+        subscriptions: Array.isArray(refreshedData?.subscriptions)
+          ? refreshedData.subscriptions
+          : prev.subscriptions,
         isOnTrial: refreshedData?.isOnTrial ?? false,
         trialRequestsRemaining:
           refreshedData?.trialRequestsRemaining ?? prev.trialRequestsRemaining,
+        totalSubscriptions:
+          typeof refreshedData?.totalSubscriptions === "number"
+            ? refreshedData.totalSubscriptions
+            : prev.totalSubscriptions,
+        paidRequestsRemaining:
+          typeof refreshedData?.paidRequestsRemaining === "number"
+            ? refreshedData.paidRequestsRemaining
+            : prev.paidRequestsRemaining,
       }))
       setShowCheckout(false)
     } catch (error: any) {
@@ -191,30 +228,70 @@ export default function BillingPage() {
           <CardTitle>Current Plan</CardTitle>
           <CardDescription>Your active subscription</CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl font-semibold">
-                {data.currentPlan?.name ?? "Free Trial"}
-              </span>
-              <Badge variant={data.isOnTrial ? "secondary" : "default"}>
-                {data.isOnTrial ? "Trial" : "Active"}
-              </Badge>
-            </div>
-            {data.isOnTrial && (
-              <p className="text-sm text-muted-foreground">
-                {data.trialRequestsRemaining} free requests remaining
-              </p>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xl font-semibold">
+              {data.currentPlan?.name ?? "Free Trial"}
+            </span>
+            <Badge variant={data.isOnTrial ? "secondary" : "default"}>
+              {data.isOnTrial ? "Trial" : "Active"}
+            </Badge>
+            {!data.isOnTrial && data.subscription?.provider && (
+              <Badge variant="outline">{data.subscription.provider}</Badge>
             )}
           </div>
 
-          {data.subscription && (
-            <div className="text-right text-sm">
-              <p className="text-muted-foreground">Renews on</p>
+          <div className="grid gap-3 rounded-lg border p-3 text-sm md:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Plan Price</p>
               <p className="font-medium">
-                {new Date(data.subscription.renewsAt).toLocaleDateString()}
+                {data.currentPlan ? `$${data.currentPlan.price}/month` : "$0"}
               </p>
             </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Monthly Limit</p>
+              <p className="font-medium">
+                {data.currentPlan
+                  ? `${data.currentPlan.monthlyRequestLimit.toLocaleString()} requests`
+                  : "50 requests"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">
+                {data.isOnTrial ? "Trial Remaining" : "Paid Credits Remaining"}
+              </p>
+              <p className="font-medium">
+                {data.isOnTrial
+                  ? `${data.trialRequestsRemaining.toLocaleString()}`
+                  : `${(data.paidRequestsRemaining ?? 0).toLocaleString()}`}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Active Since</p>
+              <p className="font-medium">
+                {data.subscription?.startedAt
+                  ? new Date(data.subscription.startedAt).toLocaleDateString()
+                  : "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Renews On</p>
+              <p className="font-medium">
+                {data.subscription?.renewsAt
+                  ? new Date(data.subscription.renewsAt).toLocaleDateString()
+                  : "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Total Plans Purchased</p>
+              <p className="font-medium">{data.totalSubscriptions}</p>
+            </div>
+          </div>
+
+          {!data.isOnTrial && (
+            <p className="text-xs text-muted-foreground">
+              You can upgrade anytime. Remaining credits from previous plans are preserved.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -316,6 +393,61 @@ export default function BillingPage() {
               Billing is handled via Razorpay secure checkout.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* SUBSCRIPTION HISTORY */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Previous Subscriptions</CardTitle>
+          <CardDescription>
+            Total plans purchased: {data.subscriptions.length}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {data.subscriptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No subscription history available yet.
+            </p>
+          ) : (
+            data.subscriptions.map((sub) => (
+              <div
+                key={sub.id}
+                className="flex flex-col gap-2 rounded border p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-medium">
+                    {sub.planId.toUpperCase()}{" "}
+                    <span className="text-muted-foreground">({sub.provider})</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Started:{" "}
+                    {sub.startedAt ? new Date(sub.startedAt).toLocaleDateString() : "-"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge
+                    variant={
+                      sub.status === "active"
+                        ? "default"
+                        : sub.status === "canceled"
+                        ? "destructive"
+                        : "secondary"
+                    }
+                  >
+                    {sub.status}
+                  </Badge>
+                  <p className="text-xs text-muted-foreground">
+                    {sub.renewsAt
+                      ? `Renews: ${new Date(sub.renewsAt).toLocaleDateString()}`
+                      : sub.canceledAt
+                      ? `Canceled: ${new Date(sub.canceledAt).toLocaleDateString()}`
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 

@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth/getAuthUser";
 import { AlertChannel } from "@/lib/models/AlertChannel";
+import {
+  ALERT_EVENT_OPTIONS,
+  isValidWebhookUrl,
+  sanitizeAlertEvents,
+} from "@/lib/alerts/config";
 
 export async function GET() {
   const user = await getAuthUser();
@@ -12,6 +17,7 @@ export async function GET() {
   await connectDB();
   const channels = await AlertChannel.find({ userId: user.id }).sort({ createdAt: -1 });
   return NextResponse.json({
+    eventOptions: ALERT_EVENT_OPTIONS,
     channels: channels.map((c: any) => ({
       id: c._id.toString(),
       name: c.name,
@@ -34,16 +40,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "name and webhookUrl required" }, { status: 400 });
   }
 
+  const validUrl = isValidWebhookUrl(webhookUrl);
+  if (!validUrl.ok) {
+    return NextResponse.json({ error: validUrl.error }, { status: 400 });
+  }
+  const events = sanitizeAlertEvents(subscribedEvents);
+  const normalizedEvents = events.length
+    ? events
+    : ([
+        "proxy.all_failed",
+        "billing.payment_failed",
+      ] as const);
+
   await connectDB();
   const channel = await AlertChannel.create({
     userId: user.id,
-    name,
-    webhookUrl,
-    subscribedEvents:
-      Array.isArray(subscribedEvents) && subscribedEvents.length
-        ? subscribedEvents
-        : ["proxy.all_failed", "billing.payment_failed"],
-    secret: secret || null,
+    name: String(name).trim(),
+    webhookUrl: validUrl.url,
+    subscribedEvents: normalizedEvents,
+    secret: typeof secret === "string" && secret.trim() ? secret.trim() : null,
   });
 
   return NextResponse.json({
@@ -54,5 +69,6 @@ export async function POST(req: NextRequest) {
       subscribedEvents: channel.subscribedEvents,
       status: channel.status,
     },
+    eventOptions: ALERT_EVENT_OPTIONS,
   });
 }

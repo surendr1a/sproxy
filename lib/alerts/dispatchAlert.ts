@@ -2,12 +2,7 @@ import crypto from "crypto";
 import { connectDB } from "@/lib/db";
 import { AlertChannel } from "@/lib/models/AlertChannel";
 import { AlertDeliveryLog } from "@/lib/models/AlertDeliveryLog";
-
-export type AlertEventType =
-  | "proxy.all_failed"
-  | "proxy.direct_fallback"
-  | "billing.payment_failed"
-  | "billing.subscription_canceled";
+import type { AlertEventType } from "@/lib/alerts/config";
 
 type DispatchAlertInput = {
   userId?: string;

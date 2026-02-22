@@ -33,6 +33,9 @@ export async function GET() {
       userId: user._id,
       status: "active",
     })
+    const subscriptions = await Subscription.find({ userId: user._id })
+      .sort({ createdAt: -1 })
+      .select("planId status provider renewsAt startedAt canceledAt createdAt")
 
     const currentPlan = user.planId
       ? plans.find((p) => p.id === user.planId) || null
@@ -47,8 +50,25 @@ export async function GET() {
             planId: subscription.planId,
             status: subscription.status,
             renewsAt: subscription.renewsAt,
+            provider: subscription.provider || null,
+            startedAt: subscription.startedAt || subscription.createdAt || null,
           }
         : null,
+      subscriptions: subscriptions.map((s) => ({
+        id: s._id.toString(),
+        planId: s.planId,
+        status: s.status,
+        provider: s.provider || "unknown",
+        renewsAt: s.renewsAt || null,
+        startedAt: s.startedAt || s.createdAt || null,
+        canceledAt: s.canceledAt || null,
+        createdAt: s.createdAt || null,
+      })),
+      totalSubscriptions: subscriptions.length,
+      paidRequestsRemaining:
+        typeof user.paidRequestsRemaining === "number"
+          ? user.paidRequestsRemaining
+          : null,
       isOnTrial: !user.planId,
       trialRequestsRemaining: user.trialRequestsRemaining,
     })
