@@ -43,9 +43,25 @@ function fromOxylabs() {
   return buildProviderUrls(host, port, username, password, countries);
 }
 
-export function getRuntimeProxyPool(): string[] {
+function fromCustom() {
   const explicitPool = csv(process.env.PROXY_POOL);
   const explicitSingle = process.env.PROXY_URL?.trim();
+  const merged = [...(explicitSingle ? [explicitSingle] : []), ...explicitPool];
+  return [...new Set(merged)];
+}
+
+export type ProxyProviderName = "smartproxy" | "oxylabs" | "custom";
+
+export function getProviderProxyPools(): Record<ProxyProviderName, string[]> {
+  return {
+    smartproxy: fromSmartproxy(),
+    oxylabs: fromOxylabs(),
+    custom: fromCustom(),
+  };
+}
+
+export function getRuntimeProxyPool(): string[] {
+  const customPool = fromCustom();
   const provider = (process.env.PROXY_PROVIDER || "custom").toLowerCase();
 
   const providerPool =
@@ -56,8 +72,7 @@ export function getRuntimeProxyPool(): string[] {
         : [];
 
   const merged = [
-    ...(explicitSingle ? [explicitSingle] : []),
-    ...explicitPool,
+    ...customPool,
     ...providerPool,
   ];
   return [...new Set(merged)];

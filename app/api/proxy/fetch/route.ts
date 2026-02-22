@@ -13,7 +13,6 @@ import { persistUsageEvent } from "@/lib/usage/persistUsage";
 import { connectDB } from "@/lib/db";
 import { ApiKey } from "@/lib/models/ApiKey";
 import { User } from "@/lib/models/User";
-
 import {
   PLAN_GUARDS,
   fetchWithTimeout,
@@ -23,6 +22,12 @@ import {
 import { dispatchUserAlert } from "@/lib/alerts/dispatchAlert";
 import { trackEvent } from "@/lib/analytics/trackEvent";
 import { computeCarryoverPaidRequests } from "@/lib/billing/requestCredits";
+import { persistProxyRequestLog } from "@/lib/logging/proxyRequestLog";
+import {
+  getEffectiveProviderOrder,
+  getProxyProviderName,
+} from "@/lib/routing/providerRouting";
+import type { ProxyProviderName } from "@/lib/proxy/providerFactory";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
@@ -33,6 +38,43 @@ const PAID_PLANS = new Set(["starter", "pro", "business", "enterprise"]);
 
 function isPaidPlan(plan: string) {
   return PAID_PLANS.has(plan);
+}
+
+function normalizeCountry(country?: string) {
+  const value = (country || "").trim().toUpperCase();
+  if (!value || value === "RANDOM" || value === "ANY" || value === "ALL") return "Random";
+  return value;
+}
+
+function proxyMatchesCountry(proxy: string, country: string) {
+  if (!country || country === "Random") return true;
+  const upper = country.toUpperCase();
+  const tagged = proxy.match(/\/\/([A-Z]{2})@/i)?.[1]?.toUpperCase();
+  if (tagged) return tagged === upper;
+  return proxy.toUpperCase().includes(upper);
+}
+
+function pickFromPool(
+  pool: string[],
+  country: string,
+  excluded: Set<string>
+): string | null {
+  const candidates = pool
+    .filter((proxy) => !excluded.has(proxy))
+    .filter((proxy) => proxyMatchesCountry(proxy, country));
+
+  if (!candidates.length) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)] || null;
+}
+
+function buildProviderAttempts(order: ProxyProviderName[], maxAttempts: number) {
+  const attempts: ProxyProviderName[] = [];
+  if (!order.length) return attempts;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    attempts.push(order[i % order.length]);
+  }
+  return attempts;
 }
 
 async function consumeRequestBalance(userId: string | undefined, plan: string) {
@@ -60,13 +102,13 @@ export async function POST(req: NextRequest) {
     method = "GET",
     headers = {},
     body,
-    rotationMode = "rotate", // rotate | sticky (from frontend)
+    rotationMode = "rotate",
     ttl = 600,
     country,
     stickySessionId,
   } = await req.json();
 
-  /* ---------------- AUTH ---------------- */
+  const normalizedCountry = normalizeCountry(country);
 
   const apiKey =
     req.headers.get("x-api-key") ||
@@ -78,8 +120,6 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
   }
-
-  /* ---------------- RATE LIMIT ---------------- */
 
   const rate = await checkRateLimit(auth.apiKey, auth.plan);
   if (!rate.allowed) {
@@ -116,8 +156,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  /* ---------------- VALIDATION ---------------- */
-
   if (!url || !url.startsWith("http")) {
     return NextResponse.json(
       { success: false, message: "Valid target URL is required" },
@@ -125,12 +163,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  /* ---------------- PLAN GUARDS ---------------- */
-
   const plan = resolvePlan(auth.plan);
   const { timeoutMs, maxResponseSize } = PLAN_GUARDS[plan];
 
   let lastError: any = null;
+  let lastProvider: string = "unknown";
 
   const isSticky = rotationMode === "sticky";
   const stickyKey = isSticky
@@ -138,40 +175,77 @@ export async function POST(req: NextRequest) {
     : null;
   const attemptedProxies = new Set<string>();
 
-  /* ---------------- RETRY LOOP ---------------- */
+  const routing = auth.userId
+    ? await getEffectiveProviderOrder(auth.userId, auth.workspaceId)
+    : null;
+  const routingEnabled = Boolean(routing?.config.enabled);
+  const providerOrder = routingEnabled && routing?.availableOrder?.length
+    ? routing.availableOrder
+    : [];
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  const maxProviderAttempts = routingEnabled
+    ? routing?.config.maxProviderAttempts || MAX_RETRIES
+    : MAX_RETRIES;
+
+  const providerAttempts = providerOrder.length
+    ? buildProviderAttempts(providerOrder, maxProviderAttempts)
+    : [];
+
+  for (let attempt = 1; attempt <= Math.max(MAX_RETRIES, providerAttempts.length || 0); attempt++) {
     let proxyUrl = "";
+    let providerUsed: ProxyProviderName | "unknown" = "unknown";
 
     try {
-      proxyUrl = isSticky
-        ? await getStickyProxy(stickyKey!, ttl, () =>
-            getRandomProxy(country, undefined, attemptedProxies)
-          )
-        : await getRandomProxy(country, undefined, attemptedProxies);
+      if (providerAttempts.length && routing) {
+        const candidateProvider = providerAttempts[attempt - 1] || providerAttempts[0];
+        const candidateProxy = pickFromPool(
+          routing.pools[candidateProvider] || [],
+          normalizedCountry,
+          attemptedProxies
+        );
+        if (!candidateProxy) {
+          throw new Error(`No healthy proxies in provider: ${candidateProvider}`);
+        }
+
+        providerUsed = candidateProvider;
+        proxyUrl = isSticky
+          ? await getStickyProxy(stickyKey!, ttl, async () => candidateProxy)
+          : candidateProxy;
+      } else {
+        proxyUrl = isSticky
+          ? await getStickyProxy(stickyKey!, ttl, () =>
+              getRandomProxy(normalizedCountry, undefined, attemptedProxies)
+            )
+          : await getRandomProxy(normalizedCountry, undefined, attemptedProxies);
+
+        providerUsed = getProxyProviderName(proxyUrl);
+      }
     } catch (error: any) {
       lastError = error;
-      break;
+      if (!providerAttempts.length || attempt >= MAX_RETRIES) {
+        break;
+      }
+      continue;
     }
 
     attemptedProxies.add(proxyUrl);
+    lastProvider = providerUsed;
 
     try {
       const agent = new ProxyAgent(proxyUrl);
 
-      // ⏱️ TIMEOUT GUARD
       const response = await fetchWithTimeout(
         (signal) =>
           undiciFetch(url, {
-          method,
-          headers,
-          body:
-            ["POST", "PUT", "PATCH"].includes(method.toUpperCase()) && body
-              ? body
-              : undefined,
-          dispatcher: agent,
-          signal,
-        }),
+            method,
+            headers,
+            body:
+              ["POST", "PUT", "PATCH"].includes(method.toUpperCase()) && body
+                ? body
+                : undefined,
+            dispatcher: agent,
+            signal,
+          }),
         timeoutMs
       );
 
@@ -179,7 +253,6 @@ export async function POST(req: NextRequest) {
         throw new Error(`Upstream server error: ${response.status}`);
       }
 
-      // 📦 RESPONSE SIZE GUARD
       const responseBody = await readResponseWithLimit(
         response,
         maxResponseSize
@@ -187,8 +260,6 @@ export async function POST(req: NextRequest) {
 
       const latency = Date.now() - startTime;
       await markProxyAsHealthy(proxyUrl);
-
-      /* ---------------- USAGE LOG ---------------- */
 
       recordRequest({
         userId: auth.userId,
@@ -217,12 +288,27 @@ export async function POST(req: NextRequest) {
         source: "proxy.fetch",
         metadata: {
           mode: rotationMode,
-          country: country || "Random",
+          country: normalizedCountry,
           status: response.status,
+          provider: providerUsed,
         },
       });
-
-      /* ---------------- FRONTEND FRIENDLY RESPONSE ---------------- */
+      await persistProxyRequestLog({
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+        apiKey: auth.apiKey,
+        targetUrl: url,
+        method,
+        status: response.status,
+        success: true,
+        provider: providerUsed,
+        proxyMode: rotationMode,
+        country: normalizedCountry,
+        latencyMs: latency,
+        requestHeaders: headers,
+        requestBody: typeof body === "string" ? body : JSON.stringify(body || ""),
+        responsePreview: responseBody.slice(0, 2000),
+      });
 
       return NextResponse.json(
         {
@@ -231,9 +317,10 @@ export async function POST(req: NextRequest) {
           body: responseBody,
           proxy: {
             ip: proxyUrl.replace(/^.*@/, "").split(":")[0],
-            country: country || "Random",
+            country: normalizedCountry,
             mode: rotationMode,
             latencyMs: latency,
+            provider: providerUsed,
           },
           usage: {
             consumed: 1,
@@ -254,7 +341,6 @@ export async function POST(req: NextRequest) {
       }
       lastError = error;
 
-      // ❌ FAILURE LOG
       recordRequest({
         userId: auth.userId,
         apiKey: auth.apiKey,
@@ -266,15 +352,13 @@ export async function POST(req: NextRequest) {
         error: error.message,
       });
 
-      if (attempt < MAX_RETRIES) {
+      if (attempt < Math.max(MAX_RETRIES, providerAttempts.length || 0)) {
         await new Promise((res) =>
           setTimeout(res, RETRY_DELAY_MS * attempt)
         );
       }
     }
   }
-
-  /* ---------------- FINAL FAILURE ---------------- */
 
   if (STRICT_PROXY_MODE) {
     await connectDB();
@@ -293,9 +377,25 @@ export async function POST(req: NextRequest) {
       payload: {
         url,
         mode: rotationMode,
-        country: country || "Random",
+        country: normalizedCountry,
         error: lastError?.message,
       },
+    });
+    await persistProxyRequestLog({
+      userId: auth.userId,
+      workspaceId: auth.workspaceId,
+      apiKey: auth.apiKey,
+      targetUrl: url,
+      method,
+      status: 0,
+      success: false,
+      error: lastError?.message || "All proxies failed",
+      provider: lastProvider,
+      proxyMode: rotationMode,
+      country: normalizedCountry,
+      requestHeaders: headers,
+      requestBody: typeof body === "string" ? body : JSON.stringify(body || ""),
+      responsePreview: "",
     });
     return NextResponse.json(
       {
@@ -308,17 +408,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Fallback for dashboard usability when proxy pool is temporarily unhealthy.
   try {
     const directResponse = await fetchWithTimeout(
       (signal) =>
         undiciFetch(url, {
-        method,
-        headers,
-        body:
-          ["POST", "PUT", "PATCH"].includes(method.toUpperCase()) && body
-            ? body
-            : undefined,
+          method,
+          headers,
+          body:
+            ["POST", "PUT", "PATCH"].includes(method.toUpperCase()) && body
+              ? body
+              : undefined,
           signal,
         }),
       timeoutMs
@@ -356,8 +455,25 @@ export async function POST(req: NextRequest) {
       payload: {
         url,
         mode: rotationMode,
-        country: country || "Random",
+        country: normalizedCountry,
       },
+    });
+    await persistProxyRequestLog({
+      userId: auth.userId,
+      workspaceId: auth.workspaceId,
+      apiKey: auth.apiKey,
+      targetUrl: url,
+      method,
+      status: directResponse.status,
+      success: true,
+      provider: "direct-fallback",
+      proxyMode: rotationMode,
+      country: normalizedCountry,
+      latencyMs: Date.now() - startTime,
+      usedDirectFallback: true,
+      requestHeaders: headers,
+      requestBody: typeof body === "string" ? body : JSON.stringify(body || ""),
+      responsePreview: responseBody.slice(0, 2000),
     });
 
     return NextResponse.json(
@@ -367,9 +483,10 @@ export async function POST(req: NextRequest) {
         body: responseBody,
         proxy: {
           ip: "N/A",
-          country: country || "Random",
+          country: normalizedCountry,
           mode: "direct-fallback",
           latencyMs: Date.now() - startTime,
+          provider: "direct-fallback",
         },
         usage: {
           consumed: 1,
@@ -394,6 +511,22 @@ export async function POST(req: NextRequest) {
     }),
   ]);
   await consumeRequestBalance(auth.userId, auth.plan);
+  await persistProxyRequestLog({
+    userId: auth.userId,
+    workspaceId: auth.workspaceId,
+    apiKey: auth.apiKey,
+    targetUrl: url,
+    method,
+    status: 0,
+    success: false,
+    error: lastError?.message || "All proxies failed",
+    provider: lastProvider,
+    proxyMode: rotationMode,
+    country: normalizedCountry,
+    requestHeaders: headers,
+    requestBody: typeof body === "string" ? body : JSON.stringify(body || ""),
+    responsePreview: "",
+  });
 
   return NextResponse.json(
     {

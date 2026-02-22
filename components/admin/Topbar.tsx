@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Menu } from "lucide-react";
 
-export default function Topbar() {
+type TopbarProps = {
+  onMenuClick: () => void;
+};
+
+export default function Topbar({ onMenuClick }: TopbarProps) {
   const [email, setEmail] = useState("admin@sproxy.io");
   const router = useRouter();
 
@@ -23,7 +28,18 @@ export default function Topbar() {
 
   return (
     <header className="h-16 bg-white border-b flex items-center justify-between px-6">
-      <h1 className="text-lg font-semibold">SProxy Admin</h1>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="rounded-md p-2 text-gray-600 hover:bg-gray-100 md:hidden"
+          aria-label="Open sidebar"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <h1 className="text-lg font-semibold">SProxy Admin</h1>
+      </div>
+
       <div className="flex items-center gap-4">
         <span className="text-sm text-gray-600">{email}</span>
         <button className="text-sm text-red-500 hover:underline" onClick={logout}>

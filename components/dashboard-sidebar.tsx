@@ -19,6 +19,11 @@ import {
   Users,
   Activity,
   MessageSquareHeart,
+  Route,
+  ChartColumnBig,
+  ClipboardList,
+  ShieldAlert,
+  Code2,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { ConfirmModal } from "./ui/confirm-modal"
@@ -40,6 +45,11 @@ const baseNavItems = [
   { href: "/dashboard/alerts", label: "Alerts", icon: BellRing },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/status", label: "Status", icon: Activity },
+  { href: "/dashboard/analytics/domains", label: "Domain Analytics", icon: ChartColumnBig },
+  { href: "/dashboard/routing/providers", label: "Provider Routing", icon: Route },
+  { href: "/dashboard/logs/requests", label: "Request Logs", icon: ClipboardList },
+  { href: "/dashboard/status/sla", label: "SLA Metrics", icon: ShieldAlert },
+  { href: "/dashboard/developers/sdk", label: "SDK & Recipes", icon: Code2 },
 ]
 
 const paidOnlyNavItems = [
@@ -74,7 +84,7 @@ export function DashboardSidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-border bg-card">
+    <aside className="flex h-screen w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-card">
       <div className="flex h-14 items-center border-b border-border px-4">
         <Link href="/" className="flex items-center gap-2">
           <Globe className="h-6 w-6" />
@@ -82,7 +92,7 @@ export function DashboardSidebar() {
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-4">
         {[...baseNavItems, ...(isPaidUser ? paidOnlyNavItems : []), ...footerNavItems].map((item) => {
           const isActive = pathname === item.href
           return (

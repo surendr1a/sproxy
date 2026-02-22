@@ -233,6 +233,27 @@ export default function ProxyDashboardPage() {
   useEffect(() => {
     loadApiKey();
     fetchProxyStatus();
+
+    const replayRaw = localStorage.getItem("proxy.replay.payload");
+    if (replayRaw) {
+      try {
+        const replay = JSON.parse(replayRaw);
+        if (replay?.url) setUrl(String(replay.url));
+        if (replay?.method) setMethod(String(replay.method).toUpperCase() as (typeof METHODS)[number]);
+        if (replay?.headers && typeof replay.headers === "object") {
+          const headerRows = Object.entries(replay.headers as Record<string, string>).map(([k, v]) =>
+            createHeaderRow({ key: k, value: String(v) })
+          );
+          if (headerRows.length) setHeaders(headerRows);
+        }
+        if (typeof replay?.body === "string") setBody(replay.body);
+        if (replay?.rotationMode === "sticky" || replay?.rotationMode === "rotate") {
+          setRotationMode(replay.rotationMode);
+        }
+        if (typeof replay?.country === "string" && replay.country.trim()) setCountry(replay.country.trim());
+      } catch {}
+      localStorage.removeItem("proxy.replay.payload");
+    }
   }, []);
 
   const updateHeader = (id: string, field: "key" | "value", value: string) => {
